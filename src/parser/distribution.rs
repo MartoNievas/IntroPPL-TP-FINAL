@@ -17,7 +17,7 @@ use rand_distr::{
     Bernoulli as RBernoulli,
     Beta as RBeta,
     Distribution as RandDistr, // trait .sample() de rand_distr; alias para no chocar
-    Exp as RExp,               // con nuestro enum `Distribution`
+    Exp as RExp,               // con el enum `Distribution`
     Gamma as RGamma,
     LogNormal as RLogNormal,
     Normal as RNormal,
@@ -166,11 +166,11 @@ impl Distribution {
     }
 }
 
-// SAMPLES
+// SAMPLES: 
 
 impl Distribution {
     
-    // Samples a value from the distribution using the provided random number generator.
+    // samples un valor aleatorio de la distribución, usando un generador de números aleatorios `rng`.
 
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> SampleResult {
         match self {
@@ -260,7 +260,7 @@ impl Distribution {
                 if !(0.0 < *x && *x < 1.0) {
                     f64::NEG_INFINITY
                 } else {
-                    let log_beta = alpha.ln() + beta.ln() - (alpha + beta).ln();
+                    let log_beta = lgamma(*alpha) + lgamma(*beta) - lgamma(alpha + beta);
                     (alpha - 1.0) * x.ln() + (beta - 1.0) * (1.0 - x).ln() - log_beta
                 }
             }
@@ -409,13 +409,13 @@ pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, Strin
     match name {
         "normal" => Distribution::normal(args[0], args[1]),
         "log-normal" => Distribution::log_normal(args[0], args[1]),
-        "uniform-continuous" => Distribution::uniform(args[0], args[1]),
+        "uniform-continuous" | "uniform" => Distribution::uniform(args[0], args[1]),
         "exponential" => Distribution::exponential(args[0]),
         "beta" => Distribution::beta(args[0], args[1]),
         "gamma" => Distribution::gamma(args[0], args[1]),
         "poisson" => Distribution::poisson(args[0]),
-        "flip" => Distribution::bernoulli(args[0]),
-        "discrete" => Distribution::discrete(&args.to_vec()),
+        "flip" | "bernoulli" => Distribution::bernoulli(args[0]),
+        "discrete" | "categorical" => Distribution::discrete(&args.to_vec()),
         "uniform-discrete" => Distribution::uniform_discrete(args[0] as i64, args[1] as i64),
         "dirichlet" => Distribution::dirichlet(&args.to_vec()),
         _ => Err(format!("Unknown distribution name: {}", name)),
