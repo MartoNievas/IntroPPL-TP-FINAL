@@ -263,7 +263,7 @@ fn prim_gte(args: &[RVal]) -> Result<RVal, String> {
 }
 
 fn prim_and(args: &[RVal]) -> Result<RVal, String> {
-    Ok(RVal::Bool((args.iter().all(|a| to_bool(a)))))
+    Ok(RVal::Bool(args.iter().all(|a| to_bool(a))))
 }
 
 fn prim_or( args: &[RVal]) -> Result<RVal, String> {
