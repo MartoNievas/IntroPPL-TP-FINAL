@@ -1,5 +1,6 @@
 // Tests para la implementación de distribuciones y sus operaciones: sample, log_prob, params, with_params, grad_log_prob
-use PPL_TP_FINAL::parser::distribution::{make_distribution, make_guide, Distribution, Value};
+use PPL_TP_FINAL::parser::distribution::{make_distribution, make_guide, Distribution};
+use PPL_TP_FINAL::parser::value::RVal;
 use rand::rngs::ThreadRng;
 use approx::assert_relative_eq;
 
@@ -18,7 +19,7 @@ mod tests_exponential {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Scalar(_)));
+        assert!(matches!(sample, RVal::Float(_)));
     }
 
     #[test]
@@ -26,18 +27,18 @@ mod tests_exponential {
         let dist = Distribution::exponential(1.0).unwrap();
 
         // rate=1 -> log_prob(0) = ln(1) - 1*0 = 0
-        let log_prob_zero = dist.log_prob(&Value::Scalar(0.0));
+        let log_prob_zero = dist.log_prob(&RVal::Float(0.0));
         assert_relative_eq!(log_prob_zero, 0.0, epsilon = 1e-6);
 
         // rate=1 -> log_prob(1) = ln(1) - 1*1 = -1
-        let log_prob_one = dist.log_prob(&Value::Scalar(1.0));
+        let log_prob_one = dist.log_prob(&RVal::Float(1.0));
         assert_relative_eq!(log_prob_one, -1.0, epsilon = 1e-6);
     }
 
     #[test]
     fn test_exponential_log_prob_outside_support() {
         let dist = Distribution::exponential(2.0).unwrap();
-        assert_eq!(dist.log_prob(&Value::Scalar(-0.5)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(-0.5)), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -45,7 +46,7 @@ mod tests_exponential {
         let dist = Distribution::exponential(1.0).unwrap();
         assert!(dist.params().is_none());
         assert!(dist
-            .grad_log_prob(&Value::Scalar(1.0))
+            .grad_log_prob(&RVal::Float(1.0))
             .is_none());
     }
 }
@@ -65,13 +66,13 @@ mod tests_beta {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Scalar(_)));
+        assert!(matches!(sample, RVal::Float(_)));
     }
 
     #[test]
     fn test_beta_log_prob() {
         let dist = Distribution::beta(2.0, 2.0).unwrap();
-        let log_prob = dist.log_prob(&Value::Scalar(0.5));
+        let log_prob = dist.log_prob(&RVal::Float(0.5));
 
         // Beta(2,2): log_prob(0.5) = ln(1.5) ≈ 0.4054651
         let expected = 1.5_f64.ln();
@@ -81,9 +82,9 @@ mod tests_beta {
     #[test]
     fn test_beta_log_prob_outside_support() {
         let dist = Distribution::beta(2.0, 2.0).unwrap();
-        assert_eq!(dist.log_prob(&Value::Scalar(0.0)), f64::NEG_INFINITY);
-        assert_eq!(dist.log_prob(&Value::Scalar(1.0)), f64::NEG_INFINITY);
-        assert_eq!(dist.log_prob(&Value::Scalar(1.5)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(0.0)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(1.0)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(1.5)), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -108,22 +109,22 @@ mod tests_gamma {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Scalar(_)));
+        assert!(matches!(sample, RVal::Float(_)));
     }
 
     #[test]
     fn test_gamma_log_prob() {
         // Gamma(shape=2, rate=1) en x=1: 2*ln(1) - lgamma(2) + 1*ln(1) - 1*1 = -1
         let dist = Distribution::gamma(2.0, 1.0).unwrap();
-        let log_prob = dist.log_prob(&Value::Scalar(1.0));
+        let log_prob = dist.log_prob(&RVal::Float(1.0));
         assert_relative_eq!(log_prob, -1.0, epsilon = 1e-6);
     }
 
     #[test]
     fn test_gamma_log_prob_outside_support() {
         let dist = Distribution::gamma(2.0, 1.0).unwrap();
-        assert_eq!(dist.log_prob(&Value::Scalar(0.0)), f64::NEG_INFINITY);
-        assert_eq!(dist.log_prob(&Value::Scalar(-1.0)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(0.0)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Float(-1.0)), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -148,13 +149,13 @@ mod tests_poisson {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Integer(_)));
+        assert!(matches!(sample, RVal::Int(_)));
     }
 
     #[test]
     fn test_poisson_log_prob() {
         let dist = Distribution::poisson(3.0).unwrap();
-        let log_prob = dist.log_prob(&Value::Integer(3));
+        let log_prob = dist.log_prob(&RVal::Int(3));
 
         // k * ln(lam) - lam - lgamma(k+1) = 3*ln(3) - 3 - ln(3!) ≈ -1.4959226
         let expected = -1.4959226;
@@ -164,15 +165,15 @@ mod tests_poisson {
     #[test]
     fn test_poisson_log_prob_negative_k() {
         let dist = Distribution::poisson(3.0).unwrap();
-        assert_eq!(dist.log_prob(&Value::Integer(-1)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Int(-1)), f64::NEG_INFINITY);
     }
 
     #[test]
     fn test_poisson_incompatible_value() {
         let dist = Distribution::poisson(3.0).unwrap();
-        // Poisson espera Value::Integer, no Scalar
+        // Poisson espera RVal::Int, no Float
         assert_eq!(
-            dist.log_prob(&Value::Scalar(3.0)),
+            dist.log_prob(&RVal::Float(3.0)),
             f64::NEG_INFINITY
         );
     }
@@ -193,17 +194,17 @@ mod tests_bernoulli {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Boolean(_)));
+        assert!(matches!(sample, RVal::Bool(_)));
     }
 
     #[test]
     fn test_bernoulli_log_prob() {
         let dist = Distribution::bernoulli(0.3).unwrap();
 
-        let log_prob_true = dist.log_prob(&Value::Boolean(true));
+        let log_prob_true = dist.log_prob(&RVal::Bool(true));
         assert_relative_eq!(log_prob_true, 0.3_f64.ln(), epsilon = 1e-6);
 
-        let log_prob_false = dist.log_prob(&Value::Boolean(false));
+        let log_prob_false = dist.log_prob(&RVal::Bool(false));
         assert_relative_eq!(log_prob_false, 0.7_f64.ln(), epsilon = 1e-6);
     }
 
@@ -234,17 +235,17 @@ mod tests_bernoulli {
     fn test_bernoulli_grad_log_prob() {
         let dist = Distribution::bernoulli(0.3).unwrap();
 
-        let grad_true = dist.grad_log_prob(&Value::Boolean(true)).unwrap();
+        let grad_true = dist.grad_log_prob(&RVal::Bool(true)).unwrap();
         assert_relative_eq!(grad_true[0], 0.7, epsilon = 1e-6);
 
-        let grad_false = dist.grad_log_prob(&Value::Boolean(false)).unwrap();
+        let grad_false = dist.grad_log_prob(&RVal::Bool(false)).unwrap();
         assert_relative_eq!(grad_false[0], -0.3, epsilon = 1e-6);
     }
 
     #[test]
     fn test_bernoulli_incompatible_value() {
         let dist = Distribution::bernoulli(0.3).unwrap();
-        let wrong_value = Value::Scalar(1.0);
+        let wrong_value = RVal::Float(1.0);
         assert!(dist.grad_log_prob(&wrong_value).is_none());
     }
 }
@@ -264,7 +265,7 @@ mod tests_discrete {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Integer(_)));
+        assert!(matches!(sample, RVal::Int(_)));
     }
 
     #[test]
@@ -282,15 +283,15 @@ mod tests_discrete {
     #[test]
     fn test_discrete_log_prob() {
         let dist = Distribution::discrete(&[0.2, 0.3, 0.5]).unwrap();
-        let log_prob = dist.log_prob(&Value::Integer(2));
+        let log_prob = dist.log_prob(&RVal::Int(2));
         assert_relative_eq!(log_prob, 0.5_f64.ln(), epsilon = 1e-6);
     }
 
     #[test]
     fn test_discrete_log_prob_out_of_range() {
         let dist = Distribution::discrete(&[0.2, 0.3, 0.5]).unwrap();
-        assert_eq!(dist.log_prob(&Value::Integer(-1)), f64::NEG_INFINITY);
-        assert_eq!(dist.log_prob(&Value::Integer(3)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Int(-1)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Int(3)), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -318,7 +319,7 @@ mod tests_discrete {
     #[test]
     fn test_discrete_grad_log_prob() {
         let dist = Distribution::discrete(&[0.5, 0.5]).unwrap();
-        let grad = dist.grad_log_prob(&Value::Integer(0)).unwrap();
+        let grad = dist.grad_log_prob(&RVal::Int(0)).unwrap();
 
         assert_relative_eq!(grad[0], 0.5, epsilon = 1e-6);
         assert_relative_eq!(grad[1], -0.5, epsilon = 1e-6);
@@ -327,7 +328,7 @@ mod tests_discrete {
     #[test]
     fn test_discrete_incompatible_value() {
         let dist = Distribution::discrete(&[0.5, 0.5]).unwrap();
-        let wrong_value = Value::Scalar(0.0);
+        let wrong_value = RVal::Float(0.0);
         assert!(dist.grad_log_prob(&wrong_value).is_none());
     }
 }
@@ -347,9 +348,9 @@ mod tests_uniform_discrete {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Integer(_)));
+        assert!(matches!(sample, RVal::Int(_)));
 
-        if let Value::Integer(k) = sample {
+        if let RVal::Int(k) = sample {
             assert!((0..5).contains(&k));
         }
     }
@@ -357,15 +358,15 @@ mod tests_uniform_discrete {
     #[test]
     fn test_uniform_discrete_log_prob() {
         let dist = Distribution::uniform_discrete(0, 5).unwrap();
-        let log_prob = dist.log_prob(&Value::Integer(2));
+        let log_prob = dist.log_prob(&RVal::Int(2));
         assert_relative_eq!(log_prob, -(5.0_f64.ln()), epsilon = 1e-6);
     }
 
     #[test]
     fn test_uniform_discrete_log_prob_outside_support() {
         let dist = Distribution::uniform_discrete(0, 5).unwrap();
-        assert_eq!(dist.log_prob(&Value::Integer(-1)), f64::NEG_INFINITY);
-        assert_eq!(dist.log_prob(&Value::Integer(5)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Int(-1)), f64::NEG_INFINITY);
+        assert_eq!(dist.log_prob(&RVal::Int(5)), f64::NEG_INFINITY);
     }
 
     #[test]
@@ -390,11 +391,14 @@ mod tests_dirichlet {
         let mut rng = ThreadRng::default();
         let sample = dist.sample(&mut rng);
 
-        assert!(matches!(sample, Value::Vector(_)));
+        assert!(matches!(sample, RVal::List(_)));
 
-        if let Value::Vector(v) = sample {
+        if let RVal::List(v) = sample {
             assert_eq!(v.len(), 3);
-            let sum: f64 = v.iter().sum();
+            let sum: f64 = v.iter().map(|elem|  match  elem  {
+                RVal::Float(f) => *f,
+                _ => 0.0,
+            }).sum();
             assert_relative_eq!(sum, 1.0, epsilon = 1e-6);
         }
     }
@@ -403,21 +407,21 @@ mod tests_dirichlet {
     fn test_dirichlet_log_prob() {
         // Dirichlet(1,1,1) es uniforme en el simplex 2-D, densidad constante = 1/B(1,1,1) = 2
         let dist = Distribution::dirichlet(&[1.0, 1.0, 1.0]).unwrap();
-        let log_prob = dist.log_prob(&Value::Vector(vec![1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]));
+        let log_prob = dist.log_prob(&RVal::List(vec![RVal::Float(1.0/3.0), RVal::Float(1.0/3.0), RVal::Float(1.0/3.0)]));
         assert_relative_eq!(log_prob, 2.0_f64.ln(), epsilon = 1e-5);
     }
 
     #[test]
     fn test_dirichlet_log_prob_wrong_length() {
         let dist = Distribution::dirichlet(&[1.0, 1.0, 1.0]).unwrap();
-        let log_prob = dist.log_prob(&Value::Vector(vec![0.5, 0.5]));
+        let log_prob = dist.log_prob(&RVal::List(vec![RVal::Float(0.5), RVal::Float(0.5)]));
         assert_eq!(log_prob, f64::NEG_INFINITY);
     }
 
     #[test]
     fn test_dirichlet_log_prob_outside_support() {
         let dist = Distribution::dirichlet(&[1.0, 1.0, 1.0]).unwrap();
-        let log_prob = dist.log_prob(&Value::Vector(vec![0.0, 0.5, 0.5]));
+        let log_prob = dist.log_prob(&RVal::List(vec![RVal::Float(0.0), RVal::Float(0.5), RVal::Float(0.5)]));
         assert_eq!(log_prob, f64::NEG_INFINITY);
     }
 

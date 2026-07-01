@@ -1,6 +1,7 @@
 // Ahora vamos a testear las primitivas, para eso vamos a crear un archivo de test en tests/primitives_tests.rs
-use PPL_TP_FINAL::parser::primitives::{make_primitives, is_primitive, RVal, HashKey};
-use PPL_TP_FINAL::parser::distribution::{make_distribution, make_guide, Distribution, Value};
+use PPL_TP_FINAL::parser::primitives::{make_primitives, is_primitive, HashKey};
+use PPL_TP_FINAL::parser::value::RVal;
+use PPL_TP_FINAL::parser::distribution::{Distribution};
 use std::collections::HashMap;
 #[cfg(test)]
 mod primitives_arithmetic_tests {
