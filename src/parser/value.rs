@@ -8,6 +8,8 @@ use crate::parser::distribution::{Distribution};
 
 use crate::parser::primitives::HashKey;
 
+use crate::interpreter::machine::Closure as MClosure;
+
 #[derive(Debug, Clone)]
 pub enum RVal {
     Int(i64),
@@ -19,6 +21,8 @@ pub enum RVal {
     Map(HashMap<HashKey, RVal>),
     Matrix(Array2<f64>),
     Dist(Distribution),
+
+    Closure(MClosure),
 }
  
 impl PartialEq for RVal {
@@ -64,6 +68,7 @@ impl std::fmt::Display for RVal {
             }
             RVal::Matrix(m) => write!(f, "Matrix{m:?}"),
             RVal::Dist(d) => write!(f, "{d}"),
+            RVal::Closure(c) => write!(f, "<fn [{}]>", c.params.join(", ")),
         }
     }
 }

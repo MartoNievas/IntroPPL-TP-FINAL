@@ -14,6 +14,13 @@ mod tests_parser {
         assert_eq!(parse_one("3.14").unwrap(),  Form::Float(3.14));
         assert_eq!(parse_one("x").unwrap(),     Form::Symbol("x".into()));
         assert_eq!(parse_one("mat-mul").unwrap(), Form::Symbol("mat-mul".into()));
+        assert_eq!(parse_one("+").unwrap(), Form::Symbol("+".into()));
+        assert_eq!(parse_one("-").unwrap(), Form::Symbol("-".into()));
+        assert_eq!(parse_one("/").unwrap(), Form::Symbol("/".into()));
+        assert_eq!(parse_one("==").unwrap(), Form::Symbol("==".into()));
+        assert_eq!(parse_one(">=").unwrap(), Form::Symbol(">=".into()));
+
+
     }
  
     #[test]
@@ -101,6 +108,7 @@ mod tests_parser {
     #[test]
     fn test_sample_program() {
         // Fragmento típico de FOPPL
+        // el r## es para no tener que escapar las comillas por ejemplo: "\""
         let src = r#"
             ; simple model
             (defn model []
