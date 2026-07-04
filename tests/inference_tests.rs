@@ -103,17 +103,18 @@ mod inference_algorithms_tests {
 
     #[test]
     fn test_smc_rejects_desynchronized_programs() {
-        // En SMC, si el programa cambia su flujo de observe dependiendo de algo aleatorio, debe fallar.
-        // Aquí forzamos una desincronización: la mitad de las máquinas harán observe, la otra mitad no.
-        // TODO: La verificacion es dinamica, despues agrego una verificacion estatica.
+        // En SMC, si el programa cambia su flujo de observe dentro de una condición o función,
+        // debe ser rechazado por el análisis estático ANTES de instanciar las partículas.
         let bad_model = "(if (sample (bernoulli 0.5)) (observe (normal 0 1) 1.0) 0)";
         let mut rng = StdRng::seed_from_u64(123);
         
         let result = run_smc(bad_model, 50, &mut rng);
         
-        // Verificamos que falle y atrape la desincronización
-        assert!(result.is_err(), "SMC debió detectar la desincronización y retornar Err");
+        // Verificamos que el análisis estático rechaze el modelo inseguro
+        assert!(result.is_err(), "SMC debió detectar el observe dentro del if y retornar Err");
         let err_msg = result.unwrap_err();
-        assert!(err_msg.contains("Desynchronization"), "Mensaje de error incorrecto: {}", err_msg);
+        
+        // Verificamos que haya sido atrapado por el Static Analysis
+        assert!(err_msg.contains("Static Analysis Error"), "Mensaje de error incorrecto: {}", err_msg);
     }
 }

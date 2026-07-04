@@ -128,7 +128,7 @@ Este lenguaje, fuertemente inspirado en Lisp y Clojure, utiliza una sintaxis bas
 
 ## Operaciones Soportadas
 
-El entorno global provee un amplio conjunto de primitivas determinísticas para operar sobre los datos, modeladas a partir de Clojure y NumPy:
+El entorno global provee un amplio conjunto de primitivas determinísticas para operar sobre los datos, funciones para manipular estructuras de datos y distribuciones para las sentencias `sample` y `observe`. Para todas las operaciones deterministicas estan definidas en `src/parser/primitives.rs` en un HashMap donde la clave representa el simbolo y el valor es la funcion correspondiente en codigo Rust (Tambien se incluyen aqui mismo las distribuciones).
 
 ### Aritmética y Matemáticas
 
@@ -172,7 +172,7 @@ Soporte nativo para álgebra lineal bidimensional (fundamental para modelos de M
 
 ## Distribuciones Soportadas
 
-El lenguaje soporta la instanciación de variables aleatorias a través de diversas familias de distribuciones paramétricas. Todas las distribuciones implementan métodos internos para muestrear (`sample`) o evaluar log-densidades (`log_prob`).
+El lenguaje soporta la instanciación de variables aleatorias a través de diversas familias de distribuciones paramétricas. Todas las distribuciones implementan métodos internos para muestrear (`sample`) o evaluar log-densidades (`log_prob`). Las mismas estan definidas en el modulo `src/parser/distribution.rs`
 
 ### Distribuciones Continuas
 
@@ -202,5 +202,130 @@ El lenguaje soporta la instanciación de variables aleatorias a través de diver
 
 # Extras
 
-# Ejecutar Proyecto
+En esta sección vamos a hablar de cosas agregadas por fuera de la consigna para hacer un trabajo practico mas completo.
 
+## Parser (`src/parser/sexpr.rs`)
+
+Para este proyecto se implementó un flujo completo de análisis sintáctico desde cero en **Rust** para procesar **S-Expressions** (expresiones S), el formato de sintaxis clásico de la familia Lisp/Clojure. El analizador sintáctico realiza la traducción directa de código en formato de texto plano a un Árbol de Sintaxis Abstracta (AST) tipado y seguro.
+
+A diferencia del tipado dinámico implícito de la implementación original en Python, la versión en Rust modela todo el sistema usando **Tipos de Datos Algebraicos (ADTs)** mediante Enums y Pattern Matching.
+
+El proceso de parseo está dividido en dos etapas principales:
+
+### 1. El Tokenizador o Lexer (`tokenize`)
+El tokenizador escanea secuencialmente el flujo de caracteres del código fuente y lo agrupa en un vector de tokens internos definidos por el enum `Token`:
+* `Token::LParen`: Representa un delimitador de apertura. Se unifican tanto los paréntesis `(` como los corchetes `[` bajo este token.
+* `Token::RParen`: Representa un delimitador de cierre, unificando tanto `)` como `]`.
+* `Token::StringLit(String)`: Cadenas de texto literales (por ejemplo, `"resultado"`).
+* `Token::Atom(String)`: Identificadores, números y símbolos (por ejemplo, `+`, `x`, `42`, `3.14`).
+
+**Características del Lexer:**
+* **Espacios y Comentarios:** Se ignoran espacios en blanco, tabulaciones, saltos de línea y comas `,` (que actúan como separadores de legibilidad en Clojure). Los comentarios que inician con punto y coma (`;`) se omiten por completo hasta el final de la línea.
+* **Soporte de Strings y Escapes:** Las cadenas encerradas en comillas dobles (`"..."`) soportan secuencias de escape estándar (`\n`, `\t`, `\\`, `\"`). Si una cadena queda abierta, el lexer lanza un error sintáctico preciso en lugar de fallar de forma silenciosa.
+
+### 2. El Parser Recursivo Descendente (`read_form`)
+El analizador sintáctico consume el vector de tokens de manera recursiva y construye el AST, el cual está representado mediante la estructura `Form`:
+```rust
+pub enum Form {
+    Symbol(String), // Identificadores (variables, primitivas, etc.)
+    Int(i64),       // Enteros de 64 bits
+    Float(f64),     // Flotantes de 64 bits
+    Bool(bool),     // Booleanos (true/false)
+    Str(String),    // Cadenas de texto literales
+    Nil,            // Valor nulo (nil)
+    List(Vec<Form>),// Expresiones compuestas/anidadas
+}
+```
+
+**Mecanismos Clave del Parser:**
+* **Conversión de Átomos (`atom`):** Convierte tokens de texto en variantes específicas de `Form`. Primero busca palabras clave como `true`, `false` y `nil`. Si no coinciden, intenta parsearlos como enteros de 64 bits o flotantes de 64 bits de forma estricta. Si falla el parseo numérico, se catalogan de forma segura como `Form::Symbol`.
+* **Análisis de Listas Recursivo:** Cuando detecta un `Token::LParen`, abre una nueva lista y procesa de forma recursiva todos los sub-elementos hasta encontrar su correspondiente `Token::RParen`.
+* **Manejo Robusto de Errores Sintácticos:** En lugar de entrar en pánicos o retornar resultados inconsistentes, el parser detecta desbalances y reporta errores descriptivos con indicaciones claras del problema (por ejemplo, paréntesis o corchetes abiertos que nunca se cerraron).
+
+### API Pública del Módulo
+El módulo expone una interfaz limpia para ser consumida por el evaluador o los motores de inferencia:
+* `parse(text: &str) -> Result<Vec<Form>, String>`: Procesa un programa completo y devuelve una lista de todas las formas (expresiones) de nivel superior encontradas.
+* `parse_one(text: &str) -> Result<Form, String>`: Utilizado para procesar exactamente una única expresión. Lanza un error amigable si el texto está vacío o si contiene múltiples formas de nivel superior sueltas.
+* `to_string(form: &Form) -> String`: Función inversa que toma un nodo del AST y lo renderiza de vuelta como código legible de Clojure (preservando el formato `.0` para floats sin parte decimal, asegurando la consistencia de tipos).
+
+## Deteccion Estatica de Desincronizacion de SMC
+
+En el algoritmo de inferencia **Sequential Monte Carlo (SMC)** (o Filtro de Partículas), todas las partículas representan trazas de ejecución concurrentes que deben avanzar de forma sincronizada. Específicamente, cada vez que las partículas se topan con una instrucción `observe`, deben detenerse al unísono (punto de sincronización) para evaluar la verosimilitud del valor observado, actualizar sus pesos acumulados y participar en el proceso coordinado de re-muestreo multinomial (*resampling*).
+
+Si alguna partícula tomara un camino alternativo donde no ejecuta un `observe` que las demás sí ejecutan (o viceversa), se produciría una **desincronización catastrófica** de la traza, rompiendo la consistencia matemática del algoritmo.
+
+Para mitigar este riesgo de forma absoluta, este proyecto implementa un sistema de **defensa en dos capas**: una capa preventiva de **análisis estático** antes de la ejecución y una salvaguarda de **detección dinámica** en tiempo de ejecución.
+
+### 1. El Análisis Estático Previo a la Ejecución
+
+Al inicio de la función principal `run_smc`, antes de inicializar la máquina de evaluación o crear las partículas, se parsea el programa y se realiza una inspección exhaustiva de su estructura del Árbol de Sintaxis Abstracta (AST):
+
+```rust
+pub fn run_smc<R: Rng + ?Sized>(...) -> Result<Vec<RVal>, String> {
+    // 1. Parseamos el código fuente a su representación AST (Form)
+    let forms = parse(program)?;
+
+    // 2. Realizamos la verificación estática de desincronización
+    check_scm_safety(&forms)?;
+    
+    // ... resto del algoritmo SMC
+}
+```
+
+La verificación se compone de dos funciones auxiliares principales:
+
+* **`check_scm_safety(forms: &[Form]) -> Result<(), String>`**:
+  Itera recursivamente sobre todas las expresiones de nivel superior (*top-level forms*) del código fuente llamando a `check_form`. Si alguna de ellas viola las reglas de seguridad estructural, interrumpe el arranque del algoritmo inmediatamente y propaga un mensaje de error descriptivo.
+
+* **`check_form(form: &Form) -> Result<bool, String>`**:
+  Es una función recursiva descendente que inspecciona el AST y tiene dos misiones:
+  1. Retornar `Ok(true)` si la expresión actual o alguna de sus sub-expresiones contiene un `observe` (para notificar la presencia de observaciones hacia los nodos padres).
+  2. Lanzar un `Err(String)` si localiza un `observe` en un contexto sintáctico que vulnere la sincronización determinística.
+
+#### Patrones Prohibidos Detectados Estáticamente:
+1. **`observe` dentro de ramas condicionales (`if`):**
+   ```clojure
+   (if condicion (observe (normal 0 1) 0.5) (sample (normal 0 1)))
+   ```
+   * **Por qué se prohíbe:** La condición del `if` puede depender del estado estocástico aleatorio de cada partícula. Si unas partículas evalúan la condición como `true` y otras como `false`, unas ejecutarán el `observe` y otras no, rompiendo inmediatamente la alineación de las trazas de SMC.
+   * **Error reportado:** *"SMC Static Analysis Error: Found an 'observe' statement inside an 'if' branch. SMC requires a deterministic observation flow. Please move the observation outside the conditional."*
+
+2. **`observe` dentro de definiciones de funciones (`fn` o `defn`):**
+   ```clojure
+   (let [mi-funcion (fn [x] (observe (normal x 1) 2.0))] ...)
+   ```
+   * **Por qué se prohíbe:** Las funciones y clausuras pueden almacenarse, pasarse como argumentos o invocarse dinámicamente un número arbitrario de veces (o ninguna) en tiempo de ejecución. Por ende, es matemáticamente imposible garantizar estáticamente la sincronización de las observaciones si estas residen dentro de una función.
+   * **Error reportado:** *"SMC Static Analysis Error: Found an 'observe' statement inside a 'fn' definition. Functions can be called dynamically, which breaks SMC synchronization guarantees."*
+
+3. **Propagación en Bloques `let`:**
+   Rastrea y propaga meticulosamente la presencia de `observe` tanto en los valores asociados a variables como en las expresiones que conforman el cuerpo del bloque `let`, asegurando que no se enmascare ninguna instrucción.
+
+---
+
+### 2. La Salvaguarda Dinámica en Tiempo de Ejecución
+
+Como red de seguridad complementaria, si existiera un flujo de ejecución dinámico sumamente complejo que lograra eludir el análisis estático y causara una desincronización real de las partículas en tiempo de ejecución, la función `run_smc` lo detecta inmediatamente.
+
+Durante el bucle principal de avance, se avanzan todas las partículas en paralelo hasta que cada una de ellas se detiene en su próximo punto de sincronización (retornando una señal o mensaje `Msg`):
+
+```rust
+for msg in messages {
+    match msg {
+        Msg::Observe(_addr, dist, y_obs, mut m) => {
+            // Flujo normal: todas las partículas están sincronizadas en un 'observe'
+            ...
+        }
+        // Si alguna partícula terminó prematuramente (Done) o se detuvo por otra señal
+        _ => return Err("SMC Desynchronization Error: Particles reached divergent execution states. All particles in Sequential Monte Carlo must encounter the exact same sequence of 'observe' statements.".into()),
+    }
+}
+```
+
+Gracias a este esquema híbrido, el motor de inferencia garantiza una ejecución del algoritmo SMC 100% matemáticamente rigurosa, proporcionando un diagnóstico inmediato del error al desarrollador y evitando simulaciones inútiles o silenciosamente incorrectas.
+
+## Algoritmos de Inferencia
+
+## Enumeracion Exacta
+
+# Ejecutar Proyecto
+ 
