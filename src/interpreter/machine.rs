@@ -52,7 +52,7 @@ pub enum Instr {
 #[derive(Debug)]
 pub enum Msg {
     Sample(Addr, Distribution, Machine),
-    Observe(Addr, Distribution, f64, Machine),
+    Observe(Addr, Distribution, RVal, Machine),
     Done(RVal, Machine),   
 }
 

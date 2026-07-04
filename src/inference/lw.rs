@@ -28,10 +28,10 @@ pub fn run_lw<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<(RVal, f64
 
             Msg::Observe(_addr, dist, y_obs, mut next_m) => {
                 // 1. Acumulamos el log-likelihood y continuamos
-                next_m.log_w += dist.log_prob(&RVal::Float(y_obs));
+                next_m.log_w += dist.log_prob(&y_obs);
 
                 // 2. Inyectamos el valor observado para que el programa siga
-                send(&mut next_m, RVal::Float(y_obs));
+                send(&mut next_m, y_obs);
 
                 m = next_m;
             }

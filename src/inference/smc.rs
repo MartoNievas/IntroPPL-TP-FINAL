@@ -56,14 +56,14 @@ pub fn run_smc<R: Rng + ?Sized>(
         for msg in messages {
             match msg {
                 Msg::Observe(_addr, dist, y_obs, mut m) => {
-                    let obs_val = RVal::Float(y_obs);
-                    let lp = dist.log_prob(&obs_val);
+                    
+                    let lp = dist.log_prob(&y_obs);
 
                     m.log_w += lp;
                     log_increments.push(lp);
 
                     // Inyectamos el valor observado para que la máquina pueda continuar
-                    send(&mut m, obs_val);
+                    send(&mut m, y_obs);
                     paused_machines.push(m);
                 }
                 // Deteccion de desincronización dinamico en tiempo de ejecucion

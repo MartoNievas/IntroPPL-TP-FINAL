@@ -258,13 +258,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                 let dist_val = m.v.pop().ok_or("Missing distribution on the value stack while evaluating ObserveK continuation")?;
 
                 if let RVal::Dist(dist) = dist_val {
-                    let y_f64 = match y {
-                        RVal::Float(f) => f,
-                        RVal::Int(i) => i as f64,
-                        _ => return Err("Type error: observed value in 'observe' must be numeric (Float or Int)".into()),
-                    };
-
-                    return Ok(Msg::Observe(addr, dist, y_f64, m));
+                    return Ok(Msg::Observe(addr, dist, y, m));
                 } else {
                     return Err("Type error: first argument to 'observe' must evaluate to a Distribution object".into());
                 }

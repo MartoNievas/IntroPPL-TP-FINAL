@@ -117,10 +117,12 @@ mod probabilistic_effects_tests {
             Msg::Observe(addr, dist, y_obs, mut paused_m) => {
                 assert!(!addr.is_empty());
                 assert_eq!(dist.to_string(), "(normal 2 1)");
-                assert_eq!(y_obs, 2.5);
+                
+                assert_eq!(y_obs, RVal::Float(2.5));
 
-                send(&mut paused_m, RVal::Float(y_obs));
+                send(&mut paused_m, y_obs);
 
+                
                 match resume(paused_m).unwrap() {
                     Msg::Done(val, _) => assert_eq!(val, RVal::Float(2.0)),
                     _ => panic!("Se esperaba Msg::Done tras reanudar el observe"),

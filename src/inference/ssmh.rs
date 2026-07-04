@@ -66,12 +66,12 @@ fn run_trace<R: Rng + ?Sized>(
                 m = next_m;
             },
             Msg::Observe(addr, dist, y_obs, mut next_m) => {
-                let obs_val = RVal::Float(y_obs);
-                let lp = dist.log_prob(&obs_val);
+                
+                let lp = dist.log_prob(&y_obs);
 
                 trace.observe_log_probs.insert(addr, lp);
 
-                send(&mut next_m, obs_val);
+                send(&mut next_m, y_obs);
                 m = next_m;
             },
             Msg::Done(value, _) => {
