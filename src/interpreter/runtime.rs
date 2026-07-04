@@ -44,7 +44,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                         } else if is_primitive(&s) {
                             m.v.push(RVal::Str(s));
                         } else {
-                            return Err(format!("Not define primitive or variable: '{}'", s));
+                            return Err(format!("Undefined variable or primitive function: '{}'", s));
                         }
                     }
 
@@ -61,14 +61,14 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                 "let" => {
                                     // (let [var1 expr1 expr2 ...] body)
                                     if list.len() < 3 {
-                                        return Err("Unexpected let syntaxis: (let [binds...] body...)".into());
+                                        return Err("Invalid 'let' syntax: expected (let [binds...] body...)".into());
                                     }
                                     if let Form::List(binds) = &list[1] {
                                         let body = list[2..].to_vec();
                                         if binds.is_empty() {
                                             push_body(&mut m.c, &body, &env, addr);
                                         } else if binds.len() % 2 != 0 {
-                                            return Err("El vector de bindings en let debe tener un número par de elementos".into());
+                                            return Err("Invalid 'let' bindings: the vector must contain an even number of elements (key-value pairs)".into());
                                         } else {
                                             let mut first_addr = addr.clone();
                                             first_addr.push("let_0".into());
@@ -84,13 +84,13 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                             m.c.push(Instr::Eval(binds[1].clone(), env.clone(), first_addr));
                                         }
                                     } else {
-                                        return Err("El primer argumento de let debe ser una lista de enlaces [...]".into());
+                                        return Err("Invalid 'let' syntax: the first argument must be a list of bindings [...]".into());
                                     }
                                 }
 
                                 "if" => {
                                     if list.len() != 4 {
-                                        return Err("Sintaxis de if invalida: (if test then else)".into());
+                                        return Err("Invalid 'if' syntax: expected (if test then else)".into());
                                     }
                                     let (test, then_b, else_b) = (&list[1], &list[2], &list[3]);
                                     let mut test_addr = addr.clone();
@@ -102,7 +102,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
 
                                 "fn" => {
                                     if list.len() < 3 {
-                                        return Err("Sintaxis de fn inválida: (fn [params...] body...)".into());
+                                        return Err("Invalid 'fn' syntax: expected (fn [params...] body...)".into());
                                     }
                                     if let Form::List(params_form) = &list[1] {
                                         let mut params = Vec::with_capacity(params_form.len());
@@ -110,20 +110,20 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                             if let Form::Symbol(param_name) = p {
                                                 params.push(param_name.clone());
                                             } else {
-                                                return Err("Los parámetros de fn deben ser símbolos".into());
+                                                return Err("Invalid 'fn' syntax: all parameters must be symbols".into());
                                             }
                                         }
                                         let body = list[2..].to_vec();
                                         let closure = Closure { params, body, env: env.clone() };
                                         m.v.push(RVal::Closure(closure));
                                     } else {
-                                        return Err("Se esperaba una lista de parámetros en fn".into());
+                                        return Err("Invalid 'fn' syntax: expected a list of parameters as the first argument".into());
                                     }
                                 }
 
                                 "sample" => {
                                     if list.len() != 2 {
-                                        return Err("sample requiere exactamente un solo argumento".into());
+                                        return Err("Invalid 'sample' syntax: expected exactly 1 argument".into());
                                     }
 
                                     let mut d_addr = addr.clone();
@@ -134,7 +134,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
 
                                 "observe" => {
                                     if list.len() != 3 {
-                                        return Err("observe requiere exactamente 2 parametros".into());
+                                        return Err("Invalid 'observe' syntax: expected exactly 2 arguments".into());
                                     }
                                     let mut d_addr = addr.clone(); d_addr.push("d".into());
                                     let mut v_addr = addr.clone(); v_addr.push("v".into());
@@ -176,7 +176,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
             }
 
             Instr::LetK { binds, idx, body, mut env, addr } => {
-                let val = m.v.pop().ok_or("Stack V vacio al evaluar LetK")?;
+                let val = m.v.pop().ok_or("Empty value stack (V) while evaluating LetK continuation")?;
                 if let Form::Symbol(var_name) = &binds[2 * idx] {
                     env.insert(var_name.clone(), val);
 
@@ -200,12 +200,12 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                         push_body(&mut m.c, &body, &env, addr);
                     }
                 } else {
-                    return Err("El lado izquierdo de una asignación en let debe ser un símbolo".into());
+                    return Err("Invalid 'let' binding: left-hand side assignment target must be a symbol".into());
                 }
             }
 
             Instr::IfK(then_b, else_b, env, addr) => {
-                let cond = m.v.pop().ok_or("Stack V vacio en IfK")?;
+                let cond = m.v.pop().ok_or("Empty value stack (V) while evaluating IfK continuation")?;
                 let branch = if matches!(cond, RVal::Bool(false) | RVal::Nil) { else_b } else { then_b };
                 m.c.push(Instr::Eval(branch, env, addr));
             }
@@ -213,11 +213,11 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
             Instr::CallK(n_args, addr) => {
                 let mut args = Vec::with_capacity(n_args);
                 for _ in 0..n_args {
-                    args.push(m.v.pop().ok_or("Faltan argumentos en CallK")?);
+                    args.push(m.v.pop().ok_or("Missing arguments on the value stack while evaluating CallK continuation")?);
                 }
                 args.reverse(); // Invertimos el orden para tenerlos en orden correcto
 
-                let func = m.v.pop().ok_or("Falta la funcion en CallK")?;
+                let func = m.v.pop().ok_or("Missing function on the value stack while evaluating CallK continuation")?;
 
                 // 1. Primitivas deterministicas por nombre
                 if let RVal::Str(prim_name) = &func {
@@ -226,13 +226,13 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                         let res = prim_fn(&args)?;
                         m.v.push(res);
                     } else {
-                        return Err(format!("Primitiva desconocida: '{}'", prim_name));
+                        return Err(format!("Unknown primitive function: '{}'", prim_name));
                     }
                 }
                 // 2. Clousure
                 else if let RVal::Closure(f) = func {
                     if f.params.len() != args.len() {
-                        return Err(format!("Aridad incorrecta la funcion esperaba: {} argumentos pero recibio {} ", f.params.len(), args.len()));
+                        return Err(format!("Arity mismatch: closure expected {} arguments, but received {}", f.params.len(), args.len()));
                     }
                     let mut new_env = f.env.clone();
                     for (param, arg) in f.params.iter().zip(args.into_iter()) {
@@ -240,33 +240,33 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                     }
                     push_body(&mut m.c, &f.body, &new_env, addr);
                 } else {
-                    return Err(format!("Se intentó invocar un valor que no es una función: {:?}", func));
+                    return Err(format!("Type error: attempted to invoke a non-callable value: {:?}", func));
                 }
             }
 
             Instr::SampleK(addr) => {
-                let dist_val = m.v.pop().ok_or("Falta distribución en SampleK")?;
+                let dist_val = m.v.pop().ok_or("Missing distribution on the value stack while evaluating SampleK continuation")?;
                 if let RVal::Dist(dist) = dist_val {
                     return Ok(Msg::Sample(addr, dist, m));
                 } else {
-                    return Err("El argumento de sample debe evaluar a una distribución".into());
+                    return Err("Type error: 'sample' argument must evaluate to a Distribution object".into());
                 }
             }
 
             Instr::ObserveK(addr) => {
-                let y = m.v.pop().ok_or("Falta el valor observado en ObserveK")?;
-                let dist_val = m.v.pop().ok_or("Falta distribución en ObserveK")?;
+                let y = m.v.pop().ok_or("Missing observed value on the value stack while evaluating ObserveK continuation")?;
+                let dist_val = m.v.pop().ok_or("Missing distribution on the value stack while evaluating ObserveK continuation")?;
 
                 if let RVal::Dist(dist) = dist_val {
                     let y_f64 = match y {
                         RVal::Float(f) => f,
                         RVal::Int(i) => i as f64,
-                        _ => return Err("El valor observado en observe debe ser un numerico".into()),
+                        _ => return Err("Type error: observed value in 'observe' must be numeric (Float or Int)".into()),
                     };
 
                     return Ok(Msg::Observe(addr, dist, y_f64, m));
                 } else {
-                    return Err("El primer argumento de observe debe ser una distribución".into());
+                    return Err("Type error: first argument to 'observe' must evaluate to a Distribution object".into());
                 }
             }
 

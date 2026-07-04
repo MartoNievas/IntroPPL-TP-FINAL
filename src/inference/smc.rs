@@ -2,7 +2,6 @@
 
 Modulo que implemente el algoritmo de inferencia Secuancial Monte Carlo, Aqui es donde brilla el objeto Machine ya que mantenemos una poblacion de N maquinas (Vec<Machine>)
 
-
 */
 
 use crate::interpreter::{initial_machine, resume, send, Machine, Msg};
@@ -13,7 +12,6 @@ use rand::prelude::*;
 // Los samples intermedios se resuelven automáticamente muestreando el prior.
 fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Msg, String> {
     loop {
-        // OPTIMIZACIÓN: Pasamos 'm' por valor sin .clone() porque ya somos dueños de ella
         match resume(m)? {
             Msg::Sample(_addr, dist, mut next_m) => {
                 // Muestreamos de la distribución prior
@@ -33,17 +31,22 @@ pub fn run_smc<R: Rng + ?Sized>(
     n_particles: usize,
     rng: &mut R,
 ) -> Result<Vec<RVal>, String> {
-    // 1. Inicializamos las N partículas todas iguales
+    
+    
+    // Parseamos el AST una sola vez y lo inicializamos en la máquina base
+    let base_m = initial_machine(program)?;
+
+    // 1. Inicializamos las N partículas usando la clonación ultrarrápida de memoria
     let mut particles: Vec<Machine> = Vec::with_capacity(n_particles);
     for _ in 0..n_particles {
-        particles.push(initial_machine(program)?);
+        particles.push(base_m.fork());
     }
 
     loop {
         // 2. Avanzar todas las partículas hasta su próximo punto de sincronización
         let mut messages = Vec::with_capacity(n_particles);
         
-        // OPTIMIZACIÓN: Usamos .into_iter() para mover las máquinas en lugar de clonarlas
+        
         for p in particles.into_iter() {
             messages.push(advance_until_sync(p, rng)?);
         }
@@ -73,7 +76,8 @@ pub fn run_smc<R: Rng + ?Sized>(
                     send(&mut m, obs_val);
                     paused_machines.push(m);
                 }
-                _ => return Err("Desincronización en SMC: las partículas llegaron a puntos de control distintos".into()),
+                // Deteccion de desincronización dinamico en tiempo de ejecucion
+                _ => return Err("SMC Desynchronization Error: Particles reached divergent execution states. All particles in Sequential Monte Carlo must encounter the exact same sequence of 'observe' statements.".into()),
             }
         }
 

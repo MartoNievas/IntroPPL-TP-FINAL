@@ -3,6 +3,7 @@ use PPL_TP_FINAL::parser::primitives::{make_primitives, is_primitive, HashKey};
 use PPL_TP_FINAL::parser::value::RVal;
 use PPL_TP_FINAL::parser::distribution::{Distribution};
 use std::collections::HashMap;
+
 #[cfg(test)]
 mod primitives_arithmetic_tests {
     // Tests de funciones aritmeticas basicas.
@@ -70,6 +71,7 @@ mod primitives_arithmetic_tests {
         let function = primitives.get("/").unwrap();
         let result = function(&args);
         assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Arithmetic error: division by zero");
     }
 
     #[test]
@@ -91,6 +93,7 @@ mod primitives_arithmetic_tests {
         let result = function(&args);
         print!("Result: {:?}", result);
         assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Arithmetic error: modulo by zero");
     }
 
     #[test]
@@ -532,7 +535,7 @@ mod tests_data_structures_operations {
         let empty_l = RVal::List(vec![]);
         let res_err = first_fn(&[empty_l]);
         assert!(res_err.is_err());
-        assert_eq!(res_err.unwrap_err(), "first: empty list");
+        assert_eq!(res_err.unwrap_err(), "Value error in 'first': cannot get the first element of an empty List");
     }
 
     #[test]
@@ -549,7 +552,7 @@ mod tests_data_structures_operations {
         let short_l = RVal::List(vec![RVal::Int(10)]);
         let res_err = second_fn(&[short_l]);
         assert!(res_err.is_err());
-        assert_eq!(res_err.unwrap_err(), "second: list too short");
+        assert_eq!(res_err.unwrap_err(), "Value error in 'second': the List does not have a second element");
     }
 
     #[test]
@@ -566,7 +569,7 @@ mod tests_data_structures_operations {
         let empty_l = RVal::List(vec![]);
         let res_err = last_fn(&[empty_l]);
         assert!(res_err.is_err());
-        assert_eq!(res_err.unwrap_err(), "last: empty list");
+        assert_eq!(res_err.unwrap_err(), "Value error in 'last': cannot get the last element of an empty List");
     }
 
     #[test]

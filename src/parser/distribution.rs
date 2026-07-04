@@ -1,4 +1,4 @@
-/* 
+/*
 
 Objeto tipo distribución, que contiene la información de la distribución de un conjunto de datos.
 
@@ -45,12 +45,9 @@ pub enum Distribution {
     Dirichlet { alphas: Vec<f64> },
 }
 
-
-
 // ---------------------------------------------------------------------------
 // Distribuciones y sus operaciones: sample, log_prob, params, with_params, grad_log_prob
 // ---------------------------------------------------------------------------
-
 
 impl Distribution {
     
@@ -58,63 +55,63 @@ impl Distribution {
 
     pub fn normal(mu: f64, sigma: f64) -> Result<Self, String> {
         if sigma <= 0.0 {
-            return Err("sigma must be positive".to_string());
+            return Err("Invalid Normal distribution parameters: 'sigma' (standard deviation) must be strictly positive".to_string());
         }
         Ok(Distribution::Normal { mu, sigma })
     }
 
     pub fn log_normal(mu: f64, sigma: f64) -> Result<Self, String> {
         if sigma <= 0.0 {
-            return Err("sigma must be positive".to_string());
+            return Err("Invalid LogNormal distribution parameters: 'sigma' (standard deviation) must be strictly positive".to_string());
         }
         Ok(Distribution::LogNormal { mu, sigma })
     }
 
     pub fn uniform(a: f64, b: f64) -> Result<Self, String> {
         if a >= b {
-            return Err("a must be less than b".to_string());
+            return Err("Invalid Uniform distribution parameters: lower bound 'a' must be strictly less than upper bound 'b'".to_string());
         }
         Ok(Distribution::Uniform { a, b })
     }
 
     pub fn exponential(rate: f64) -> Result<Self, String> {
         if rate <= 0.0 {
-            return Err("rate must be positive".to_string());
+            return Err("Invalid Exponential distribution parameters: 'rate' must be strictly positive".to_string());
         }
         Ok(Distribution::Exponential { rate })
     }
 
     pub fn beta(alpha: f64, beta: f64) -> Result<Self, String> {
         if alpha <= 0.0 || beta <= 0.0 {
-            return Err("alpha and beta must be positive".to_string());
+            return Err("Invalid Beta distribution parameters: 'alpha' and 'beta' must be strictly positive".to_string());
         }
         Ok(Distribution::Beta { alpha, beta })
     }
 
     pub fn gamma(shape: f64, rate: f64) -> Result<Self, String> {
         if shape <= 0.0 || rate <= 0.0 {
-            return Err("shape and rate must be positive".to_string());
+            return Err("Invalid Gamma distribution parameters: 'shape' and 'rate' must be strictly positive".to_string());
         }
         Ok(Distribution::Gamma { shape, rate })
     }
 
     pub fn poisson(lam: f64) -> Result<Self, String> {
         if lam <= 0.0 {
-            return Err("lambda must be positive".to_string());
+            return Err("Invalid Poisson distribution parameters: 'lam' (lambda/rate) must be strictly positive".to_string());
         }
         Ok(Distribution::Poisson { lam })
     }
 
     pub fn bernoulli(p: f64) -> Result<Self, String> {
         if !(0.0..=1.0).contains(&p) {
-            return Err("flip: p must be in [0,1]".into());
+            return Err("Invalid Bernoulli distribution parameters: probability 'p' must be in the closed interval [0.0, 1.0]".into());
         }
         Ok(Distribution::Bernoulli { p })
     }
 
     pub fn discrete(probs: &[f64]) -> Result<Self, String> {
         if probs.iter().any(|&p| p < 0.0) || probs.iter().sum::<f64>() <= 0.0 {
-            return Err("discrete: invalid probability List".into());
+            return Err("Invalid Discrete distribution parameters: all probabilities must be non-negative and sum to a strictly positive value".into());
         }
         let total: f64 = probs.iter().sum();
         Ok(Distribution::Discrete {
@@ -124,22 +121,22 @@ impl Distribution {
 
     pub fn uniform_discrete(lo: i64, hi: i64) -> Result<Self, String> {
         if lo >= hi {
-            return Err("uniform-discrete: lo must be less than hi".into());
+            return Err("Invalid UniformDiscrete distribution parameters: lower bound 'lo' must be strictly less than upper bound 'hi'".into());
         }
         Ok(Distribution::UniformDiscrete { lo, hi })
     }
 
     pub fn dirichlet(alphas: &[f64]) -> Result<Self, String> {
         if alphas.iter().any(|&a| a <= 0.0) {
-            return Err("dirichlet: all alphas must be positive".into());
+            return Err("Invalid Dirichlet distribution parameters: all concentration parameters ('alphas') must be strictly positive".into());
         }
         Ok(Distribution::Dirichlet {
             alphas: alphas.to_vec(),
         })
     }
 }    
-    // Nombres de primitivos de distribuciones, para mostrar en errores y logs
-
+    
+// Nombres de primitivos de distribuciones, para mostrar en errores y logs
 impl Distribution {
     pub fn name(&self) -> &'static str {
         match self {
@@ -163,7 +160,6 @@ impl Distribution {
 impl Distribution {
     
     // samples un valor aleatorio de la distribución, usando un generador de números aleatorios `rng`.
-
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> RVal {
         match self {
             Distribution::Normal { mu, sigma } => {
@@ -211,10 +207,8 @@ impl Distribution {
                 let samples: Vec<f64> = dist.sample(rng);
                 RVal::List(samples.into_iter().map(RVal::Float).collect())
             }
-
+        }
     }
-
-}
 }
 
 // LOG-PROBABILITIES
@@ -286,7 +280,6 @@ impl Distribution {
                     f64::NEG_INFINITY
                 }
             }
-
             (Distribution::UniformDiscrete { lo, hi }, RVal::Int(k)) => {
                 if *lo <= *k && *k < *hi {
                     -((*hi - *lo) as f64).ln()
@@ -320,7 +313,6 @@ impl Distribution {
             }
             _ => f64::NEG_INFINITY, // incompatible value type for the distribution
         }
-
     }
 }
 
@@ -384,7 +376,6 @@ impl Distribution {
             _ => None,
         }
     }
-
 }
 
 fn sigmoid(x: f64) -> f64 {
@@ -414,7 +405,7 @@ pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, Strin
         "discrete" | "categorical" => Distribution::discrete(&args.to_vec()),
         "uniform-discrete" => Distribution::uniform_discrete(args[0] as i64, args[1] as i64),
         "dirichlet" => Distribution::dirichlet(&args.to_vec()),
-        _ => Err(format!("Unknown distribution name: {}", name)),
+        _ => Err(format!("Unknown distribution family: '{}'", name)),
     }
 }
 
@@ -430,7 +421,7 @@ pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
         }
         Distribution::Bernoulli { p } => Distribution::bernoulli(*p),
         Distribution::Discrete { probs } => Distribution::discrete(&probs.to_vec()),
-        other => Err(format!("no optimizable guide family for distribution: {}", other.name())),  
+        other => Err(format!("No optimizable guide family available for the '{}' distribution in Black Box Variational Inference (BBVI)", other.name())),  
     }
 }
 

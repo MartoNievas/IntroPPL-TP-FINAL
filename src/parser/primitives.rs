@@ -19,7 +19,7 @@ impl HashKey {
             RVal::Float(f) => Ok(HashKey::Int(*f as i64)),
             RVal::Bool(b) => Ok(HashKey::Bool(*b)),
             RVal::Str(s) => Ok(HashKey::Str(s.clone())),
-            other => Err(format!("not a valid hash-map key: {other:?}")),
+            other => Err(format!("Type error: expected a valid hash-map key (Int, Float, Bool, or Str), but received: {:?}", other)),
         }
     }
 }
@@ -50,7 +50,7 @@ fn to_f64(v: &RVal) -> Result<f64, String> {
         RVal::Int(i) => Ok(*i as f64),
         RVal::Float(f) => Ok(*f),
         RVal::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
-        other => Err(format!("expected number, got {other}")),
+        other => Err(format!("Type error: expected a numeric value (Int, Float, or Bool), but received: {}", other)),
     }
 }
 
@@ -63,7 +63,7 @@ fn to_i64(v: &RVal) -> Result<i64, String> {
         RVal::Int(i) => Ok(*i),
         RVal::Float(f) => Ok(*f as i64),
         RVal::Bool(b) => Ok(if *b { 1 } else { 0 }),
-        other => Err(format!("expected integer, got {other}")),
+        other => Err(format!("Type error: expected an integer value, but received: {}", other)),
     }
 }
 
@@ -86,7 +86,7 @@ fn to_matrix(v: &RVal) -> Result<Array2<f64>, String> {
                     let data = data?;
                     let n = data.len();
                     return Ok(Array2::from_shape_vec((n, 1), data)
-                        .map_err(|e| e.to_string())?);
+                        .map_err(|e| format!("Shape error in matrix conversion: {}", e))?);
                 }
             };
             let mut flat = Vec::with_capacity(rows.len() * ncols);
@@ -96,12 +96,12 @@ fn to_matrix(v: &RVal) -> Result<Array2<f64>, String> {
                         flat.push(to_f64(x)?);
                     }
                 } else {
-                    return Err("mat: expected list of lists".into());
+                    return Err("Type error in matrix conversion: expected a List of Lists".into());
                 }
             }
-            Array2::from_shape_vec((rows.len(), ncols), flat).map_err(|e| e.to_string())
+            Array2::from_shape_vec((rows.len(), ncols), flat).map_err(|e| format!("Shape error in matrix conversion: {}", e))
         }
-        other => Err(format!("expected matrix or list-of-lists, got {other}")),
+        other => Err(format!("Type error: expected a Matrix or a List of Lists, but received: {}", other)),
     }
 }
  
@@ -150,7 +150,7 @@ fn prim_div(args: &[RVal]) -> Result<RVal, String> {
     if args.len() == 1 {
         let val = to_f64(&args[0])?;
         if val == 0.0 {
-            return Err("division by zero".into());
+            return Err("Arithmetic error: division by zero".into());
         }
         return Ok(RVal::Float(1.0 / val));
     }
@@ -159,7 +159,7 @@ fn prim_div(args: &[RVal]) -> Result<RVal, String> {
     for a in &args[1..] {
         let divisor = to_f64(a)?;
         if divisor == 0.0 {
-            return Err("division by zero".into());
+            return Err("Arithmetic error: division by zero".into());
         }
         out /= divisor;
     }
@@ -233,7 +233,7 @@ fn prim_vector(args: &[RVal]) -> Result< RVal, String> {
 
 fn prim_hash_map(args: &[RVal]) -> Result< RVal, String> {
     if args.len() % 2 != 0 {
-        return Err("hash-map expects an even number of arguments".into());
+        return Err("Arity error: 'hash-map' expects an even number of arguments to form key-value pairs".into());
     }
     let mut map = HashMap::new();
     for i in (0..args.len()).step_by(2) {
@@ -267,7 +267,7 @@ fn prim_get(args: &[RVal]) -> Result< RVal, String> {
             let row: Vec<RVal> = m.row(idx).iter().map(|&x| RVal::Float(x)).collect();
             Ok(RVal::List(row))
         }
-        other => Err(format!("get: expected map, list, or matrix, got {other}"))
+        other => Err(format!("Type error in 'get': expected a collection (Map, List, or Matrix), but received: {}", other))
         }
     }
 
@@ -289,35 +289,35 @@ fn prim_put(args: &[RVal]) -> Result< RVal, String> {
             out[idx] = value;
             Ok(RVal::List(out))
         }
-        other => Err(format!("put: not a collection: {other}")),
+        other => Err(format!("Type error in 'put'/'assoc': expected a collection (Map or List), but received: {}", other)),
     }
 }
 
 fn prim_first(args: &[RVal]) -> Result<RVal, String> {
     match &args[0] {
-        RVal::List(v) => v.first().cloned().ok_or("first: empty list".into()),
-        other => Err(format!("first: not a list: {other}")),
+        RVal::List(v) => v.first().cloned().ok_or("Value error in 'first': cannot get the first element of an empty List".into()),
+        other => Err(format!("Type error in 'first': expected a List, but received: {}", other)),
     }
 }
 
 fn prim_second(args: &[RVal]) -> Result<RVal, String> {
     match &args[0] {
-        RVal::List(v) => v.get(1).cloned().ok_or("second: list too short".into()),
-        other => Err(format!("second: not a list: {other}")),
+        RVal::List(v) => v.get(1).cloned().ok_or("Value error in 'second': the List does not have a second element".into()),
+        other => Err(format!("Type error in 'second': expected a List, but received: {}", other)),
     }
 }
 
 fn prim_last(args: &[RVal]) -> Result<RVal, String> {
     match &args[0] {
-        RVal::List(v) => v.last().cloned().ok_or("last: empty list".into()),
-        other => Err(format!("last: not a list: {other}")),
+        RVal::List(v) => v.last().cloned().ok_or("Value error in 'last': cannot get the last element of an empty List".into()),
+        other => Err(format!("Type error in 'last': expected a List, but received: {}", other)),
     }
 }
 
 fn prim_rest(args: &[RVal]) -> Result< RVal, String> {
     match &args[0] {
         RVal::List(v) => Ok(RVal::List(v[1..].to_vec())),
-        other => Err(format!("rest: not a list: {other}")),
+        other => Err(format!("Type error in 'rest': expected a List, but received: {}", other)),
     }
 }
 
@@ -325,16 +325,16 @@ fn prim_nth(args: &[RVal]) -> Result<RVal, String> {
     match &args[0] {
         RVal::List(v) => {
             let i = to_i64(&args[1])? as usize;
-            v.get(i).cloned().ok_or(format!("nth: index {i} out of bounds"))
+            v.get(i).cloned().ok_or(format!("Index error in 'nth': index {} is out of bounds", i))
         }
-        other => Err(format!("nth: not a list: {other}")),
+        other => Err(format!("Type error in 'nth': expected a List, but received: {}", other)),
     }
 }
 
 fn prim_conj(args: &[RVal]) -> Result< RVal, String> {
     let mut out = match &args[0] {
         RVal::List(v) => v.clone(),
-        other => return Err(format!("conj: not a list: {other}")),
+        other => return Err(format!("Type error in 'conj': expected a List as the base collection, but received: {}", other)),
     };
     out.extend_from_slice(&args[1..]);
     Ok(RVal::List(out))
@@ -344,7 +344,7 @@ fn prim_cons(args: &[RVal]) -> Result < RVal, String> {
     let x = args[0].clone();
     let coll = match &args[1] {
         RVal::List(v) => v.clone(),
-        other => return Err(format!("cons: not a list: {other}")),
+        other => return Err(format!("Type error in 'cons': expected a List as the base collection, but received: {}", other)),
     };
     let mut out = vec![x];
     out.extend(coll);
@@ -354,7 +354,7 @@ fn prim_cons(args: &[RVal]) -> Result < RVal, String> {
 fn prim_append(args: &[RVal]) -> Result<RVal, String> {
     let mut out = match &args[0] {
         RVal::List(v) => v.clone(),
-        other => return Err(format!("append: not a list: {other}")),
+        other => return Err(format!("Type error in 'append': expected a List as the base collection, but received: {}", other)),
     };
     out.extend_from_slice(&args[1..]);
     Ok(RVal::List(out))
@@ -365,7 +365,7 @@ fn prim_concat(args: &[RVal]) -> Result<RVal, String> {
     for a in args {
         match a {
             RVal::List(v) => out.extend_from_slice(v),
-            other => return Err(format!("concat: not a list: {other}")),
+            other => return Err(format!("Type error in 'concat': all arguments must be Lists, but received: {}", other)),
         }
     }
     Ok(RVal::List(out))
@@ -376,7 +376,7 @@ fn prim_count(args: &[RVal]) -> Result<RVal, String> {
         RVal::List(v) => Ok(RVal::Int(v.len() as i64)),
         RVal::Map(m) => Ok(RVal::Int(m.len() as i64)),
         RVal::Str(s) => Ok(RVal::Int(s.len() as i64)),
-        other => Err(format!("count: not a collection: {other}")),
+        other => Err(format!("Type error in 'count': expected a collection (List, Map, or String), but received: {}", other)),
     }
 }
  
@@ -384,7 +384,7 @@ fn prim_empty(args: &[RVal]) -> Result<RVal, String> {
     match &args[0] {
         RVal::List(v) => Ok(RVal::Bool(v.is_empty())),
         RVal::Map(m) => Ok(RVal::Bool(m.is_empty())),
-        other => Err(format!("empty?: not a collection: {other}")),
+        other => Err(format!("Type error in 'empty?': expected a collection (List or Map), but received: {}", other)),
     }
 }
  
@@ -397,7 +397,7 @@ fn prim_range(args: &[RVal]) -> Result<RVal, String> {
         1 => (0i64, to_i64(&args[0])?, 1i64),
         2 => (to_i64(&args[0])?, to_i64(&args[1])?, 1i64),
         3 => (to_i64(&args[0])?, to_i64(&args[1])?, to_i64(&args[2])?),
-        _ => return Err("range: expects 1, 2 or 3 arguments".into()),
+        _ => return Err("Arity error in 'range': expected 1, 2, or 3 arguments".into()),
     };
     let v: Vec<RVal> = (start..end_).step_by(step as usize).map(RVal::Int).collect();
     Ok(RVal::List(v))
@@ -494,7 +494,7 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     m.insert("mod", Box::new(|a| {
         let divisor = to_f64(&a[1])?;
         if divisor == 0.0 {
-            Err("modulo by zero".into())
+            Err("Arithmetic error: modulo by zero".into())
         } else {
             Ok(smart_num(to_f64(&a[0])? % divisor))
         }

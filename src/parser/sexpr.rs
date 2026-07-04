@@ -1,6 +1,4 @@
-/* 
-
-Forms are represented as plain Python data:
+/* Forms are represented as plain Python data:
   - Symbol (a str subclass)        identifiers:  x, +, sample, mat-mul
   - int / float                    numbers
   - bool                           true / false
@@ -32,9 +30,7 @@ impl std::fmt::Display for Form {
 }
 
 
-/* 
-
-Token: tipo interno del tokenizador 
+/* Token: tipo interno del tokenizador 
 
 */
 
@@ -80,7 +76,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                 let mut buffer = String::new();
                 loop {
                     match chars.next() {
-                        None => return Err("Unterminated string literal".into()),
+                        None => return Err("Syntax error: Unterminated string literal. A string was opened with '\"' but never closed.".into()),
                         Some('"') => break, // llegamos al final del string literal
                         Some('\\') => match chars.next() { // char escapado
                             Some('n') => buffer.push('\n'),
@@ -88,7 +84,7 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                             Some('\\') => buffer.push('\\'),
                             Some('"') => buffer.push('"'),
                             Some(c) => buffer.push(c),
-                            None => return Err("Unterminated escape".into()),
+                            None => return Err("Syntax error: Unterminated escape sequence at the end of a string literal.".into()),
                         },
                         Some(c) => buffer.push(c),
                     }
@@ -149,7 +145,7 @@ equivalente a _read de python
 
 fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
     if pos >= tokens.len() {
-        return Err("unexpected end of input".to_string());
+        return Err("Syntax error: Unexpected end of input while parsing. Check for unclosed parentheses or brackets.".to_string());
     }
 
     match &tokens[pos] {
@@ -160,7 +156,7 @@ fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
             loop {
 
                 if cur >= tokens.len() {
-                    return Err("Missing closing parenthesis".to_string());
+                    return Err("Syntax error: Missing closing parenthesis ')' or bracket ']'. An opened list was never closed.".to_string());
                 }
 
                 if matches!(tokens[cur], Token::RParen) {
@@ -175,7 +171,7 @@ fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
         }
 
         Token::RParen => {
-            Err("Unexpected )".to_string())
+            Err("Syntax error: Unexpected closing parenthesis ')' or bracket ']'. Found a closing delimiter without a matching opening delimiter.".to_string())
         }
 
         Token::StringLit(s) => {
@@ -229,7 +225,7 @@ pub fn parse_one(text: &str) -> Result<Form, String> {
     let forms = parse(text)?;
     match  forms.len() {
         1 => Ok(forms.into_iter().next().unwrap()),
-        n => Err(format!("Expected exactly one form, got {n}")),
+        n => Err(format!("Parsing error: Expected exactly one top-level form, but found {}. If you have multiple expressions, wrap them in a block like (let [...] ...).", n)),
     }
 }
 
@@ -264,4 +260,3 @@ pub fn to_string(form: &Form) -> String {
         }
     }
 }
-

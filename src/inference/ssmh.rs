@@ -5,12 +5,8 @@ El mismo realiza una camina aleatoria sobre la traza de ejecucion.
 
 */
 
-
-
-use core::f64;
 use std::collections::{HashMap, HashSet};
-use std::ops::Add;
-use crate::interpreter::{initial_machine, resume, send, Addr, Msg};
+use crate::interpreter::{initial_machine, resume, send, Addr, Machine, Msg};
 use crate::parser::value::RVal;
 use rand::prelude::*;
 
@@ -42,17 +38,15 @@ fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
 }
 
 fn run_trace<R: Rng + ?Sized>(
-    program: &str,
+    mut m: Machine,
     rng: &mut R,
     x0: Option<&Addr>,
     cache: &HashMap<Addr, RVal>,
 ) -> Result<(RVal, Trace), String> {
 
-    let mut m = initial_machine(program)?;
     let mut trace = Trace::default();
 
     loop {
-
         match resume(m)? {
             Msg::Sample(a, dist, mut next_m) => {
                 let x = if Some(&a) == x0 {
@@ -119,7 +113,8 @@ pub fn single_site_mh<R: Rng + ?Sized>(
     steps: usize,
     warmup: usize,
 ) -> Result<Vec<RVal>, String> {
-    let (mut curr_val, mut curr_trace) = run_trace(program, rng, None,&HashMap::new())?;
+    let base_m = initial_machine(program)?;
+    let (mut curr_val, mut curr_trace) = run_trace(base_m.fork(), rng, None, &HashMap::new())?;
 
     let mut chain = Vec::with_capacity(steps);
 
@@ -136,8 +131,7 @@ pub fn single_site_mh<R: Rng + ?Sized>(
         let a0_idx = rng.random_range(0..addresses.len());
         let a0 = &addresses[a0_idx];
 
-        let (prop_val, prop_trace) = run_trace(program, rng, Some(a0), &curr_trace.values)?;
-        let u : f64 = rng.random();
+        let (prop_val, prop_trace) = run_trace(base_m.fork(), rng, Some(a0), &curr_trace.values)?;
 
         let log_alpha = mh_log_alpha(&curr_trace, &prop_trace, a0);
         let u: f64 = rng.random();
