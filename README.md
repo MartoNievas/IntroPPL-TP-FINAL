@@ -1,6 +1,6 @@
 # Trabajo Final Introducción a los Lenguajes de Programación Probabilísticos
 
-Trabajo final de **Martín Nievas Wilberger** para la materia Introduccion a los Lenguajes de Programación Probabilísticos
+Trabajo final de **Martín Nievas Wilberger** para la materia Introducción a los Lenguajes de Programación Probabilísticos
 
 # Acerca del Proyecto
 
@@ -46,6 +46,16 @@ Los algoritmos implementados en este proyecto (*Sequential Monte Carlo*, *Metrop
 ### 4. Ergonomía para la Estructura de Traza (Trace Tracking)
 Para implementar algoritmos como **Single-Site Metropolis-Hastings**, es indispensable mantener una "traza" (*Trace*) que asocie de manera unívoca cada llamada condicional `sample` a una dirección de ejecución (*Address*). La propiedad de pertenencia (*Ownership*) y el clonado explícito de datos en Rust facilitan la creación de un sistema de seguimiento de direcciones limpio y sin efectos secundarios inesperados al modificar el estado de las variables aleatorias.
 
+## Aclaraciones Técnicas: CPS Funcional Puro vs. Máquina CEK
+
+Durante las iteraciones de diseño de este proyecto, y contemplando una sugerencia del profesor, se evaluó fuertemente la posibilidad de implementar el evaluador de expresiones utilizando **Continuation-Passing Style (CPS) funcional puro**. En la literatura clásica de Lisp, esto se logra pasando funciones de orden superior (*closures*) como continuaciones para pausar y reanudar el flujo. 
+
+Sin embargo, se tomó la decisión arquitectónica final de prescindir del CPS puro y utilizar en su lugar una **Máquina CEK (Control, Environment, Continuation)**, la cual es esencialmente la "defuncionalización" matemática del CPS. Esta decisión resuelve dos problemas críticos que presenta Rust:
+
+1. **La barrera de la clonación (Función `fork` para SMC y MCMC):** Este es el factor decisivo. Algoritmos como Sequential Monte Carlo requieren pausar la ejecución en cada instrucción `observe`, **clonar** el estado de la máquina en múltiples partículas, y reanudar de forma paralela. En Rust, es notoriamente complejo y limitante clonar un *closure* arbitrario oculto detrás de *Traits* dinámicos (ej. `Box<dyn Fn>`), ya que el compilador desconoce el tamaño y el contenido del entorno capturado en tiempo de ejecución. Al usar una Máquina CEK, la "continuación" pasa de ser una función opaca a una simple estructura de datos concreta (un vector de enums `Vec<Instr>`), haciendo que toda la máquina sea trivial y rápidamente clonable mediante `#[derive(Clone)]`.
+
+2. **Tipos Opacos y TCO (Tail Call Optimization):** Implementar CPS puro requiere construir tipos de retorno recursivos y encadenar *closures*. En Rust, lidiar con los tiempos de vida (*lifetimes*) de referencias dentro de múltiples *closures* anidados entorpece enormemente la legibilidad y mantenibilidad del evaluador. Además, al carecer Rust de optimización de llamadas de cola (TCO) garantizada, un CPS funcional puro para programas con recursión probabilística profunda terminaría provocando irremediablemente un *Stack Overflow*. La pila explícita de la máquina CEK maneja iterativamente el flujo en el *Heap*, evadiendo este problema por completo.
+
 # Estructura del Proyecto
 
 El código fuente está organizado de forma modular siguiendo las convenciones e idiomáticas de **Rust**, separando claramente las etapas de análisis sintáctico (frontend), evaluación y ejecución (backend), los motores de inferencia matemática y la batería de pruebas:
@@ -57,7 +67,7 @@ TP-FINAL-PPL
 |-- LICENSE                  -> Licencia del proyecto
 |-- README.md                -> Documentación principal del proyecto
 |-- src/
-|   |-- main.rs              -> 
+|   |-- main.rs              -> Punto de entrada y ejecutable de demostración
 |   |-- lib.rs               -> Raíz de la librería que expone los módulos
 |   |
 |   |-- parser/              -> Módulo de análisis sintáctico y AST
@@ -70,7 +80,7 @@ TP-FINAL-PPL
 |   |-- interpreter/         -> Motor de evaluación y tiempo de ejecución
 |   |   |-- mod.rs           -> Exportaciones del evaluador
 |   |   |-- machine.rs       -> Máquina de evaluación para entornos y Closures
-|   |   +-- runtime.rs       -> Interprete, direccion (Addresses) e interfaz de mensajes para el motoro de inferencia.
+|   |   +-- runtime.rs       -> Intérprete, dirección (Addresses) e interfaz de mensajes para el motor de inferencia.
 |   |
 |   +-- inference/           -> Motores de inferencia probabilística
 |       |-- mod.rs           -> Exportaciones de algoritmos
@@ -128,7 +138,7 @@ Este lenguaje, fuertemente inspirado en Lisp y Clojure, utiliza una sintaxis bas
 
 ## Operaciones Soportadas
 
-El entorno global provee un amplio conjunto de primitivas determinísticas para operar sobre los datos, funciones para manipular estructuras de datos y distribuciones para las sentencias `sample` y `observe`. Para todas las operaciones deterministicas estan definidas en `src/parser/primitives.rs` en un HashMap donde la clave representa el simbolo y el valor es la funcion correspondiente en codigo Rust (Tambien se incluyen aqui mismo las distribuciones).
+El entorno global provee un amplio conjunto de primitivas determinísticas para operar sobre los datos, funciones para manipular estructuras de datos y distribuciones para las sentencias `sample` y `observe`. Para todas las operaciones determinísticas están definidas en `src/parser/primitives.rs` en un HashMap donde la clave representa el símbolo y el valor es la función correspondiente en código Rust (También se incluyen aquí mismo las distribuciones).
 
 ### Aritmética y Matemáticas
 
@@ -172,7 +182,7 @@ Soporte nativo para álgebra lineal bidimensional (fundamental para modelos de M
 
 ## Distribuciones Soportadas
 
-El lenguaje soporta la instanciación de variables aleatorias a través de diversas familias de distribuciones paramétricas. Todas las distribuciones implementan métodos internos para muestrear (`sample`) o evaluar log-densidades (`log_prob`). Las mismas estan definidas en el modulo `src/parser/distribution.rs`
+El lenguaje soporta la instanciación de variables aleatorias a través de diversas familias de distribuciones paramétricas. Todas las distribuciones implementan métodos internos para muestrear (`sample`) o evaluar log-densidades (`log_prob`). Las mismas están definidas en el módulo `src/parser/distribution.rs`
 
 ### Distribuciones Continuas
 
@@ -202,7 +212,7 @@ El lenguaje soporta la instanciación de variables aleatorias a través de diver
 
 # Extras
 
-En esta sección vamos a hablar de cosas agregadas por fuera de la consigna para hacer un trabajo practico mas completo.
+En esta sección vamos a hablar de cosas agregadas por fuera de la consigna para hacer un trabajo práctico más completo.
 
 ## Parser (`src/parser/sexpr.rs`)
 
@@ -248,7 +258,7 @@ El módulo expone una interfaz limpia para ser consumida por el evaluador o los 
 * `parse_one(text: &str) -> Result<Form, String>`: Utilizado para procesar exactamente una única expresión. Lanza un error amigable si el texto está vacío o si contiene múltiples formas de nivel superior sueltas.
 * `to_string(form: &Form) -> String`: Función inversa que toma un nodo del AST y lo renderiza de vuelta como código legible de Clojure (preservando el formato `.0` para floats sin parte decimal, asegurando la consistencia de tipos).
 
-## Deteccion Estatica de Desincronizacion de SMC
+## Detección Estática de Desincronización de SMC
 
 En el algoritmo de inferencia **Sequential Monte Carlo (SMC)** (o Filtro de Partículas), todas las partículas representan trazas de ejecución concurrentes que deben avanzar de forma sincronizada. Específicamente, cada vez que las partículas se topan con una instrucción `observe`, deben detenerse al unísono (punto de sincronización) para evaluar la verosimilitud del valor observado, actualizar sus pesos acumulados y participar en el proceso coordinado de re-muestreo multinomial (*resampling*).
 
@@ -323,9 +333,31 @@ for msg in messages {
 
 Gracias a este esquema híbrido, el motor de inferencia garantiza una ejecución del algoritmo SMC 100% matemáticamente rigurosa, proporcionando un diagnóstico inmediato del error al desarrollador y evitando simulaciones inútiles o silenciosamente incorrectas.
 
-## Algoritmos de Inferencia
+## Algoritmos de Inferencia Extra
 
-## Enumeracion Exacta
+Como extra en el motor de inferencia del proyecto también cubrí 2 algoritmos de inferencia adicionales vistos durante la cursada, lo que demuestra la versatilidad de la máquina virtual CEK para adaptarse a diferentes paradigmas estadísticos:
+
+### 1. Black-Box Variational Inference (BBVI)
+
+A diferencia de los métodos tradicionales de Monte Carlo (MCMC/SMC) que aproximan la distribución a posteriori mediante muestreo estocástico, BBVI transforma la inferencia en un problema de **optimización matemática**.
+
+* Se propone una familia de distribuciones guía parametrizadas $q_\theta(x)$ para cada sitio probabilístico.
+
+* El objetivo es encontrar los parámetros $\theta$ que minimicen la divergencia con la distribución real, maximizando la cota inferior de la evidencia (**ELBO**).
+
+* Para lograrlo sin requerir un motor de diferenciación automática global, el algoritmo utiliza el *Score Function Trick* (REINFORCE) y un **optimizador Adam** programado nativamente, el cual ajusta los parámetros mediante descenso/ascenso de gradiente estocástico.
+
+**Nota:** Este algoritmo de inferencia se explora en el capítulo 4 del libro antes mencionado en el que se basa fuertemente la cursada.
+
+### 2. Enumeración Exacta (Exact Enumeration)
+
+Se trata de un método de inferencia **100% determinista y exacto**. En lugar de realizar estimaciones lanzando valores al azar, este algoritmo explora exhaustivamente todos los universos o ramificaciones posibles del programa.
+
+* Cada vez que la ejecución alcanza una instrucción `sample`, la máquina virtual se "clona" (fork) a sí misma por cada posible valor que puede tomar la distribución, explorando todos los caminos en paralelo y calculando su probabilidad exacta mediante la regla de Bayes.
+
+* **Limitación intrínseca:** La enumeración exacta requiere que las variables probabilísticas tengan **soporte finito** (solo distribuciones discretas acotadas, como Bernoulli o Categórica). Si se intenta enumerar una distribución continua (como la Normal, que posee infinitos resultados posibles), el motor arroja un error controlado para evitar una explosión combinatoria y el agotamiento de la memoria.
+
+
+**Nota:** A diferencia de **BBVI** este algoritmo de inferencia no se menciona de manera explícita en el libro, pero fue visto en clase, esto es debido a su poca aplicabilidad en casos reales.
 
 # Ejecutar Proyecto
- 

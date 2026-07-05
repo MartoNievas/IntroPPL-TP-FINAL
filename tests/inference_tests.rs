@@ -17,7 +17,7 @@ fn as_f64(val: &RVal) -> f64 {
     match val {
         RVal::Float(f) => *f,
         RVal::Int(i) => *i as f64,
-        _ => panic!("Se esperaba un valor numérico"),
+        _ => panic!("Expected a numeric value"),
     }
 }
 
@@ -32,14 +32,14 @@ mod inference_algorithms_tests {
         let n_particles = 2000;
 
         let (values, weights) = likelihood_weighting(CONJUGATE_MODEL, n_particles, &mut rng)
-            .expect("Fallo al ejecutar Likelihood Weighting");
+            .expect("Failed to execute Likelihood Weighting");
 
         assert_eq!(values.len(), n_particles);
         assert_eq!(weights.len(), n_particles);
 
         // 1. Verificamos que los pesos sumen ~1.0 (Normalización Softmax correcta)
         let sum_weights: f64 = weights.iter().sum();
-        assert!((sum_weights - 1.0).abs() < 1e-6, "Los pesos no suman 1.0");
+        assert!((sum_weights - 1.0).abs() < 1e-6, "Weights do not sum to 1.0");
 
         // 2. Calculamos la media ponderada estimada
         let mut estimated_mean = 0.0;
@@ -51,7 +51,7 @@ mod inference_algorithms_tests {
         let error = (estimated_mean - EXACT_MEAN).abs();
         assert!(
             error < TOLERANCE,
-            "LW media estimada: {}, esperada: {}. Error ({}) supera la tolerancia.",
+            "LW estimated mean: {}, expected: {}. Error ({}) exceeds tolerance.",
             estimated_mean, EXACT_MEAN, error
         );
     }
@@ -62,7 +62,7 @@ mod inference_algorithms_tests {
         let n_particles = 1000;
 
         let results = run_smc(CONJUGATE_MODEL, n_particles, &mut rng)
-            .expect("Fallo al ejecutar SMC");
+            .expect("Failed to execute SMC");
 
         assert_eq!(results.len(), n_particles);
 
@@ -73,7 +73,7 @@ mod inference_algorithms_tests {
         let error = (estimated_mean - EXACT_MEAN).abs();
         assert!(
             error < TOLERANCE,
-            "SMC media estimada: {}, esperada: {}. Error ({}) supera la tolerancia.",
+            "SMC estimated mean: {}, expected: {}. Error ({}) exceeds tolerance.",
             estimated_mean, EXACT_MEAN, error
         );
     }
@@ -85,7 +85,7 @@ mod inference_algorithms_tests {
         let warmup = 1000;
 
         let chain = single_site_mh(CONJUGATE_MODEL, &mut rng, steps, warmup)
-            .expect("Fallo al ejecutar SSMH");
+            .expect("Failed to execute SSMH");
 
         // La cadena final debe tener la longitud exacta de 'steps' (sin incluir warmup)
         assert_eq!(chain.len(), steps);
@@ -96,7 +96,7 @@ mod inference_algorithms_tests {
         let error = (estimated_mean - EXACT_MEAN).abs();
         assert!(
             error < TOLERANCE,
-            "SSMH media estimada: {}, esperada: {}. Error ({}) supera la tolerancia.",
+            "SSMH estimated mean: {}, expected: {}. Error ({}) exceeds tolerance.",
             estimated_mean, EXACT_MEAN, error
         );
     }
@@ -111,10 +111,44 @@ mod inference_algorithms_tests {
         let result = run_smc(bad_model, 50, &mut rng);
         
         // Verificamos que el análisis estático rechaze el modelo inseguro
-        assert!(result.is_err(), "SMC debió detectar el observe dentro del if y retornar Err");
+        assert!(result.is_err(), "SMC should have detected the observe inside the if and returned Err");
         let err_msg = result.unwrap_err();
         
         // Verificamos que haya sido atrapado por el Static Analysis
-        assert!(err_msg.contains("Static Analysis Error"), "Mensaje de error incorrecto: {}", err_msg);
+        assert!(err_msg.contains("Static Analysis Error"), "Incorrect error message: {}", err_msg);
     }
+
+    #[test]
+#[test]
+fn test_bbvi_convergence_coin_flip() {
+    use PPL_TP_FINAL::inference::bbvi::run_bbvi;
+    use rand::prelude::*;
+
+    // Muestreamos 'x' de una Normal (rango ilimitado) 
+    // y calculamos 'p' usando la fórmula de la sigmoide: p = 1 / (1 + exp(-x))
+    // De esta forma, 'p' siempre será un valor válido entre 0 y 1 para el Bernoulli.
+    let program = r#"
+        (let [x (sample (normal 0.0 1.0))
+              p (/ 1.0 (+ 1.0 (exp (- 0.0 x))))]
+          (observe (bernoulli p) true)
+          (observe (bernoulli p) true)
+          (observe (bernoulli p) true)
+          p)
+    "#;
+
+    let mut rng = StdRng::seed_from_u64(42);
+    
+    let (elbo_history, theta_opt) = run_bbvi(program, 150, 15, 0.05, &mut rng).unwrap();
+
+    let initial_elbo = elbo_history[0];
+    let final_elbo = *elbo_history.last().unwrap();
+    
+    assert!(
+        final_elbo > initial_elbo,
+        "The ELBO should increase during optimization. Initial: {}, Final: {}", initial_elbo, final_elbo
+    );
+
+    assert!(!theta_opt.is_empty(), "Expected to optimize at least one probabilistic site");
+    println!("Initial ELBO: {:.4} -> Final ELBO: {:.4}", initial_elbo, final_elbo);
+}
 }

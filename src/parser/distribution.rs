@@ -203,7 +203,7 @@ impl Distribution {
                 RVal::Int(uniform_discrete.sample(rng))
             }
             Distribution::Dirichlet { alphas } => {
-                let dist = RDirichlet::new(&alphas.clone()).unwrap();
+                let dist = RDirichlet::new(alphas).unwrap();
                 let samples: Vec<f64> = dist.sample(rng);
                 RVal::List(samples.into_iter().map(RVal::Float).collect())
             }
@@ -230,7 +230,7 @@ impl Distribution {
                 }
             }
             (Distribution::Uniform { a, b }, RVal::Float(x)) => {
-                if *a < *x && *x < *b {
+                if *a <= *x && *x <= *b {
                     -(b - a).ln()
                 } else {
                     f64::NEG_INFINITY
@@ -324,9 +324,12 @@ impl Distribution {
         match self {
             Distribution::Normal { mu, sigma } => Some(vec![*mu, sigma.ln()]),
             Distribution::LogNormal { mu, sigma } => Some(vec![*mu, sigma.ln()]),
-            Distribution::Bernoulli { p } => Some(vec![(*p / (1.0 - *p)).ln()]), // logit(p)
+            Distribution::Bernoulli { p } => {
+                let p_clamped = p.max(1e-12).min(1.0 - 1e-12);
+                Some(vec![(p_clamped / (1.0 - p_clamped)).ln()])
+            }
             Distribution::Discrete { probs } => {
-                Some(probs.iter().map(|&p| p.max(1e-10).ln()).collect()) // log-probs, evitando log(0)
+                Some(probs.iter().map(|&p| p.max(1e-12).ln()).collect()) // log-probs, evitando log(0)
             }
             _ => None, // otras distribuciones no tienen parámetros continuos
         }

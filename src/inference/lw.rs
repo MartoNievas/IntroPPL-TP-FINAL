@@ -7,7 +7,7 @@ use crate::interpreter::{initial_machine, resume, send, Machine, Msg};
 use crate::parser::value::RVal;
 use rand::prelude::*;
 
-// OPTIMIZACIÓN: Recibimos mut m: Machine en lugar de program: &str
+
 pub fn run_lw<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<(RVal, f64), String> {
     loop {
         // Le pasamos la máquina por valor sin necesidad de usar .clone()
