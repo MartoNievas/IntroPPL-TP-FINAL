@@ -1,21 +1,22 @@
-mod parser;
-mod interpreter;
 mod inference;
+mod interpreter;
+mod parser;
 
 use std::env;
 use std::fs;
 use std::time::Instant;
 
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use PPL_TP_FINAL::inference::bbvi::run_bbvi;
+use PPL_TP_FINAL::inference::exact_enumeration::{enumerate_traces, posterior_table};
 use PPL_TP_FINAL::inference::lw::likelihood_weighting;
 use PPL_TP_FINAL::inference::smc::run_smc;
 use PPL_TP_FINAL::inference::ssmh::single_site_mh;
-use PPL_TP_FINAL::inference::bbvi::run_bbvi;
-use PPL_TP_FINAL::inference::exact_enumeration::{enumerate_traces, posterior_table};
 use PPL_TP_FINAL::parser::value::RVal;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
+use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
-// ── Colores ANSI para que la salida se lea mejor en una presentación en vivo ──
+// ─ Colores ANSI para que la salida se lea mejor en una presentación en vivo
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const CYAN: &str = "\x1b[36m";
@@ -23,7 +24,7 @@ const GREEN: &str = "\x1b[32m";
 const RED: &str = "\x1b[31m";
 const YELLOW: &str = "\x1b[33m";
 
-/// Extrae el valor f64 de un RVal numérico.
+// Extrae el valor f64 de un RVal numérico.
 fn as_f64(val: &RVal) -> f64 {
     match val {
         RVal::Float(f) => *f,
@@ -57,9 +58,9 @@ fn print_warn(msg: &str) {
     println!("   {YELLOW}[AVISO]{RESET} {msg}");
 }
 
-/// Imprime encabezado + modelo fuente, corre el bloque de la demo,
-/// y reporta cuánto tardó. No hace panic si `f` maneja sus propios
-/// errores internamente (ver demos abajo).
+// Imprime encabezado + modelo fuente, corre el bloque de la demo,
+// y reporta cuánto tardó. No hace panic si `f` maneja sus propios
+// errores internamente en las demos abajo.
 fn run_demo<F: FnOnce()>(title: &str, model: &str, f: F) {
     print_header(title);
     println!("Modelo ejecutado:\n{}", model.trim());
@@ -122,20 +123,24 @@ fn demo_smc(rng: &mut StdRng) {
             p)
     "#;
 
-    run_demo("2. SEQUENTIAL MONTE CARLO (SMC / Filtro de Particulas)", model, || {
-        let n_particles = 2000;
-        println!("Ejecutando SMC con {n_particles} particulas sincronizadas...");
+    run_demo(
+        "2. SEQUENTIAL MONTE CARLO (SMC / Filtro de Particulas)",
+        model,
+        || {
+            let n_particles = 2000;
+            println!("Ejecutando SMC con {n_particles} particulas sincronizadas...");
 
-        match run_smc(model, n_particles, rng) {
-            Ok(vals) => {
-                let mean: f64 = vals.iter().map(as_f64).sum::<f64>() / (n_particles as f64);
-                print_ok(&format!(
-                    "Probabilidad 'p' estimada: {mean:.4} (Analitica: ~0.6250)"
-                ));
+            match run_smc(model, n_particles, rng) {
+                Ok(vals) => {
+                    let mean: f64 = vals.iter().map(as_f64).sum::<f64>() / (n_particles as f64);
+                    print_ok(&format!(
+                        "Probabilidad 'p' estimada: {mean:.4} (Analitica: ~0.6250)"
+                    ));
+                }
+                Err(e) => print_err(&format!("Fallo en SMC: {e}")),
             }
-            Err(e) => print_err(&format!("Fallo en SMC: {e}")),
-        }
-    });
+        },
+    );
 }
 
 // ============================================================================
@@ -150,17 +155,23 @@ fn demo_smc_safety(rng: &mut StdRng) {
             0)
     "#;
 
-    run_demo("3. SEGURIDAD SMC: ANALISIS ESTATICO DE TRAZAS", model, || {
-        println!("Analizando AST y previniendo ejecucion desincronizada...");
+    run_demo(
+        "3. SEGURIDAD SMC: ANALISIS ESTATICO DE TRAZAS",
+        model,
+        || {
+            println!("Analizando AST y previniendo ejecucion desincronizada...");
 
-        match run_smc(model, 100, rng) {
-            Ok(_) => print_err("Fallo de seguridad: el modelo debio ser rechazado por el linter."),
-            Err(e) => {
-                print_ok("Analisis Estatico exitoso. Ejecucion abortada antes de instanciar particulas.");
-                println!("   Detalle del Linter:\n     >> {e}");
+            match run_smc(model, 100, rng) {
+                Ok(_) => {
+                    print_err("Fallo de seguridad: el modelo debio ser rechazado por el linter.")
+                }
+                Err(e) => {
+                    print_ok("Analisis Estatico exitoso. Ejecucion abortada antes de instanciar particulas.");
+                    println!("   Detalle del Linter:\n     >> {e}");
+                }
             }
-        }
-    });
+        },
+    );
 }
 
 // ============================================================================
@@ -185,7 +196,11 @@ fn demo_ssmh(rng: &mut StdRng) {
         match single_site_mh(model, rng, steps, warmup) {
             Ok(chain) => {
                 let mean: f64 = chain.iter().map(as_f64).sum::<f64>() / (steps as f64);
-                let var: f64 = chain.iter().map(|x| (as_f64(x) - mean).powi(2)).sum::<f64>() / (steps as f64);
+                let var: f64 = chain
+                    .iter()
+                    .map(|x| (as_f64(x) - mean).powi(2))
+                    .sum::<f64>()
+                    / (steps as f64);
                 let std_err = (var / steps as f64).sqrt();
 
                 print_ok(&format!(
@@ -216,7 +231,9 @@ fn demo_bbvi(rng: &mut StdRng) {
         let steps: usize = 250;
         let lr = 0.05;
 
-        println!("Optimizando ELBO con Adam (Pasos: {steps}, Muestras/Lote: {n_samples}, LR: {lr})...");
+        println!(
+            "Optimizando ELBO con Adam (Pasos: {steps}, Muestras/Lote: {n_samples}, LR: {lr})..."
+        );
 
         match run_bbvi(model, steps, n_samples, lr, rng) {
             Ok((elbo_history, theta_opt)) => {
@@ -268,24 +285,52 @@ fn demo_enum(_rng: &mut StdRng) {
         match enumerate_traces(model, 1000) {
             Ok(runs) => {
                 let (mut pmf, log_z) = posterior_table(&runs);
-                print_ok(&format!("Enumeracion completada. Log Evidence (Z): {log_z:.4}"));
-                
+                print_ok(&format!(
+                    "Enumeracion completada. Log Evidence (Z): {log_z:.4}"
+                ));
+
                 // 1. Ordenamos la tabla para que se vea profesional (de menor a mayor valor)
                 pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
 
-                // 2. Encabezado de la tabla
-                println!("\n   {:<10} | {:<12} | {:<12}", "Genotipo", "Prob", "LogMass");
-                println!("   {:-<40}", "");
-                
-                // 3. Impresión formateada
-                for (val, prob, lw) in pmf {
-                    let val_str = format!("{}", val); // Usa Display para que imprima "1" en vez de "Int(1)"
-                    
-                    if prob < 0.0001 && prob > 0.0 {
-                        println!("      {:<10} | {:>10.4e} | {:>10.4}", val_str, prob, lw);
+                print_ok(&format!("Estados explorados totales: {}", runs.len()));
+
+                let mut table = Table::builder().style(TableStyle::elegant()).build();
+
+                table.add_row(Row::new(vec![
+                    TableCell::builder("Valor")
+                        .alignment(Alignment::Center)
+                        .build(),
+                    TableCell::builder("Prob")
+                        .alignment(Alignment::Center)
+                        .build(),
+                    TableCell::builder("Log mass")
+                        .alignment(Alignment::Right)
+                        .build(),
+                ]));
+
+                for (value, prob, log_mass) in pmf {
+                    let prob_str = if prob < 0.0001 && prob > 0.0 {
+                        format!("{:.4e}", prob)
                     } else {
-                        println!("      {:<10} | {:>10.4}   | {:>10.4}", val_str, prob, lw);
-                    }
+                        format!("{:.4}", prob)
+                    };
+
+                    table.add_row(Row::new(vec![
+                        TableCell::builder(value.to_string())
+                            .alignment(Alignment::Center)
+                            .build(),
+                        TableCell::builder(prob_str)
+                            .alignment(Alignment::Center)
+                            .build(),
+                        TableCell::builder(format!("{:.4}", log_mass))
+                            .alignment(Alignment::Right)
+                            .build(),
+                    ]));
+                }
+
+                let table_str = table.render();
+                for line in table_str.lines() {
+                    println!("  {}", line);
                 }
             }
             Err(e) => print_err(&format!("Fallo en Enumeracion Exacta: {e}")),
@@ -334,8 +379,8 @@ impl Algorithm {
     }
 }
 
-/// Lee el modelo desde el archivo .hoppl indicado. Termina el programa
-/// con un mensaje claro si el archivo no existe o no se puede leer.
+// Lee el modelo desde el archivo .hoppl indicado. Termina el programa
+// con un mensaje claro si el archivo no existe o no se puede leer.
 fn load_model_file(path: &str) -> String {
     match fs::read_to_string(path) {
         Ok(contents) => contents,
@@ -346,9 +391,9 @@ fn load_model_file(path: &str) -> String {
     }
 }
 
-/// Corre el algoritmo seleccionado sobre un modelo arbitrario cargado desde
-/// disco. A diferencia de las demos hardcodeadas, aca no conocemos el valor
-/// analitico esperado, asi que solo reportamos estadisticos generales.
+// Corre el algoritmo seleccionado sobre un modelo arbitrario cargado desde
+// disco. A diferencia de las demos hardcodeadas, aca no conocemos el valor
+// analitico esperado, asi que solo reportamos datos estadisticos generales.
 fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
     // Parametros por defecto (mismos que usan las demos hardcodeadas).
     const N_PARTICLES_LW: usize = 5000;
@@ -368,7 +413,7 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
 
     match algorithm {
         Algorithm::Lw => {
-            println!("Ejecutando LW con {N_PARTICLES_LW} particulas...");
+            println!("  Ejecutando LW con {N_PARTICLES_LW} particulas...");
             match likelihood_weighting(model, N_PARTICLES_LW, rng) {
                 Ok((vals, weights)) => {
                     let mean: f64 = vals
@@ -421,7 +466,9 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                     println!("   ELBO Final   : {elbo_final:.4e}");
 
                     if elbo_final > elbo_inicial {
-                        print_ok("La ELBO ascendio con exito. El optimizador redujo la divergencia.");
+                        print_ok(
+                            "La ELBO ascendio con exito. El optimizador redujo la divergencia.",
+                        );
                     } else {
                         print_warn("La ELBO no subio significativamente.");
                     }
@@ -440,31 +487,57 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
             match enumerate_traces(model, ENUM_MAX_TRACES) {
                 Ok(runs) => {
                     let (mut pmf, log_z) = posterior_table(&runs);
-                    
-                    // 1. Ordenar para que la tabla sea consistente (0, 1, 2...)
+
                     pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
-                    
-                    println!("\n   Enumeracion completada. Log Evidence (Z): {log_z:.4}");
-                    // Usamos formato alineado fijo para el encabezado
-                    println!("   {:<10} | {:<12} | {:<12}", "Valor", "Prob", "LogMass");
-                    println!("   {:-<40}", "");
-                    
+
+                    print_ok("Enumeracion completada. Log Evidence (Z): {log_z:.4}");
+                    print_ok(&format!("Estados explorados totales: {}", runs.len()));
+
+                    let mut table = Table::builder().style(TableStyle::elegant()).build();
+
+                    // Encabezado
+                    table.add_row(Row::new(vec![
+                        TableCell::builder("Valor")
+                            .alignment(Alignment::Center)
+                            .build(),
+                        TableCell::builder("Prob")
+                            .alignment(Alignment::Center)
+                            .build(),
+                        TableCell::builder("Log mass")
+                            .alignment(Alignment::Right)
+                            .build(),
+                    ]));
+
                     for (val, prob, lw) in pmf {
-                        // 2. Usamos "{}" en lugar de "{:?}" para llamar a tu Display
-                        let val_str = format!("{}", val); 
-                        
-                        // 3. Formato dinámico: si es muy chico, notación científica
-                        if prob < 0.0001 && prob > 0.0 {
-                            println!("      {:<10} | {:>10.4e} | {:>10.4}", val_str, prob, lw);
+                        let prob_str = if prob < 0.0001 && prob > 0.0 {
+                            format!("{:.4e}", prob)
                         } else {
-                            println!("      {:<10} | {:>10.4}   | {:>10.4}", val_str, prob, lw);
-                        }
+                            format!("{:.4}", prob)
+                        };
+
+                        table.add_row(Row::new(vec![
+                            TableCell::builder(format!("{}", val))
+                                .alignment(Alignment::Center)
+                                .build(),
+                            TableCell::builder(prob_str)
+                                .alignment(Alignment::Center)
+                                .build(),
+                            TableCell::builder(format!("{:.4}", lw))
+                                .alignment(Alignment::Right)
+                                .build(),
+                        ]));
+                    }
+
+                    let table_str = table.render();
+
+                    for line in table_str.lines() {
+                        println!("  {}",line)
                     }
                 }
                 Err(e) => print_err(&format!("Fallo: {e}")),
             }
         }
-}
+    }
 
     println!("   (tiempo: {:.2?})", start.elapsed());
 }
@@ -472,10 +545,15 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
 fn print_usage(demos: &[Demo]) {
     eprintln!("Uso:");
     eprintln!("  cargo run                              -> corre todas las demos hardcodeadas");
-    eprintln!("  cargo run -- <numero>                  -> corre una demo especifica (1-{})", demos.len());
+    eprintln!(
+        "  cargo run -- <numero>                  -> corre una demo especifica (1-{})",
+        demos.len()
+    );
     eprintln!("  cargo run -- <archivo.hoppl> <algoritmo> -> corre un modelo propio");
     eprintln!();
-    eprintln!("Algoritmos disponibles: lw, ssmh, smc, bbvi, exact-enumeration (alias: enum, exact)");
+    eprintln!(
+        "Algoritmos disponibles: lw, ssmh, smc, bbvi, exact-enumeration (alias: enum, exact)"
+    );
     eprintln!();
     eprintln!("Demos disponibles:");
     for d in demos {
@@ -493,12 +571,36 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     let demos: Vec<Demo> = vec![
-        Demo { id: 1, label: "Likelihood Weighting", run: demo_lw },
-        Demo { id: 2, label: "Sequential Monte Carlo", run: demo_smc },
-        Demo { id: 3, label: "Seguridad SMC (analisis estatico)", run: demo_smc_safety },
-        Demo { id: 4, label: "Single-Site MH", run: demo_ssmh },
-        Demo { id: 5, label: "BBVI", run: demo_bbvi },
-        Demo { id: 6, label: "Exact Enumeration", run: demo_enum },
+        Demo {
+            id: 1,
+            label: "Likelihood Weighting",
+            run: demo_lw,
+        },
+        Demo {
+            id: 2,
+            label: "Sequential Monte Carlo",
+            run: demo_smc,
+        },
+        Demo {
+            id: 3,
+            label: "Seguridad SMC (analisis estatico)",
+            run: demo_smc_safety,
+        },
+        Demo {
+            id: 4,
+            label: "Single-Site MH",
+            run: demo_ssmh,
+        },
+        Demo {
+            id: 5,
+            label: "BBVI",
+            run: demo_bbvi,
+        },
+        Demo {
+            id: 6,
+            label: "Exact Enumeration",
+            run: demo_enum,
+        },
     ];
 
     // ── Caso 1: cargo run -- <archivo.hoppl> <algoritmo> ──────────────────
@@ -527,7 +629,10 @@ fn main() {
 
     if let Some(n) = selected {
         if !demos.iter().any(|d| d.id == n) {
-            eprintln!("Numero de demo invalido: {n}. Usa un valor entre 1 y {}.", demos.len());
+            eprintln!(
+                "Numero de demo invalido: {n}. Usa un valor entre 1 y {}.",
+                demos.len()
+            );
             print_usage(&demos);
             std::process::exit(1);
         }
@@ -562,7 +667,13 @@ fn main() {
     println!("Tiempo total: {:.2?}", total_start.elapsed());
 
     if selected.is_none() {
-        println!("Tip: ejecuta `cargo run -- <numero>` para correr una sola demo (1-{}).", demos.len());
-        println!("Tip: ejecuta `cargo run -- <archivo.hoppl> <algoritmo>` para correr un modelo propio.");
+        println!(
+            "Tip: ejecuta `cargo run -- <numero>` para correr una sola demo (1-{}).",
+            demos.len()
+        );
+        println!(
+            "Tip: ejecuta `cargo run -- <archivo.hoppl> <algoritmo>` para correr un modelo propio."
+        );
     }
 }
+
