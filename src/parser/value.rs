@@ -1,5 +1,6 @@
 /* Objeto que sirve como valor de retorno de todas la primitivas incluidas distribuciones*/
 
+use std::hash::Hash;
 use std::{collections::HashMap};
  
 use ndarray::{Array2};
@@ -89,6 +90,34 @@ impl std::fmt::Display for RVal {
             RVal::Matrix(m) => write!(f, "Matrix{m:?}"),
             RVal::Dist(d) => write!(f, "{d}"),
             RVal::Closure(c) => write!(f, "<fn [{}]>", c.params.join(", ")),
+        }
+    }
+}
+
+
+// Implementamos los traits Eq y Hash para RVal, esto para optimizar la tabla de exact enumertion
+
+impl Eq for RVal {}
+
+impl Hash for RVal {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            RVal::Int(i) => i.hash(state),
+            RVal::Float(f) => f.to_bits().hash(state), // Convertimos bits para hashear floats
+            RVal::Bool(b) => b.hash(state),
+            RVal::Str(s) => s.hash(state),
+            RVal::Nil => ().hash(state),
+            RVal::List(v) => v.hash(state),
+            RVal::Map(m) => {
+                // Los mapas son difíciles de hashear por el orden, 
+                // pero si HashKey lo permite, usamos su tamaño
+                m.len().hash(state);
+            }
+            // Para tipos complejos como Matrix, Closure o Dist, 
+            // no es recomendable usarlos como claves en un HashMap.
+            // Si llegan a ocurrir, hasheamos su dirección o simplemente saltamos
+            _ => 0.hash(state),
         }
     }
 }

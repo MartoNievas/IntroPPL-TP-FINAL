@@ -168,17 +168,17 @@ fn test_bbvi_convergence_coin_flip() {
         assert_eq!(pmf8.len(), 9);
         
         for i in 0..=8 {
-            assert!(pmf8.iter().any(|(val, _)| val.as_i64().expect("No numeric value") == i));
+            assert!(pmf8.iter().any(|(val, _, _ )| val.as_i64().expect("No numeric value") == i));
         }
 
         // Relajamos la precisión a 1e-8 (Equivalente al np.allclose de Python)
-        let sum_probs: f64 = pmf8.iter().map(|(_, prob)| prob).sum();
+        let sum_probs: f64 = pmf8.iter().map(|(_, prob, _)| prob).sum();
         assert!((sum_probs - 1.0).abs() < 1e-8, "La suma de probabilidades dio: {}", sum_probs);
 
         let expected_log_z = -2.9387946656298647;
         assert!((log_z8 - expected_log_z).abs() < 1e-8);
 
-        let mean_enum: f64 = pmf8.iter().map(|(val, prob)| val.as_i64().expect("No numeric value") as f64 * prob).sum();
+        let mean_enum: f64 = pmf8.iter().map(|(val, prob, _)| val.as_i64().expect("No numeric value") as f64 * prob).sum();
         let expected_mean = 6.000655098870;
         assert!((mean_enum - expected_mean).abs() < 1e-8);
     }

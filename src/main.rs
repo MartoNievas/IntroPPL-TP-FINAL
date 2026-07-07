@@ -3,6 +3,7 @@ mod interpreter;
 mod inference;
 
 use std::env;
+use std::fs;
 use std::time::Instant;
 
 use PPL_TP_FINAL::inference::lw::likelihood_weighting;
@@ -20,6 +21,7 @@ const BOLD: &str = "\x1b[1m";
 const CYAN: &str = "\x1b[36m";
 const GREEN: &str = "\x1b[32m";
 const RED: &str = "\x1b[31m";
+const YELLOW: &str = "\x1b[33m";
 
 /// Extrae el valor f64 de un RVal numérico.
 fn as_f64(val: &RVal) -> f64 {
@@ -30,39 +32,13 @@ fn as_f64(val: &RVal) -> f64 {
     }
 }
 
-/// Diagnósticos básicos de una cadena MCMC: media, desvío estándar,
-/// autocorrelación lag-1 y tamaño de muestra efectivo (ESS) aproximado.
-/// El ESS asume decaimiento geométrico de la autocorrelación, que es una
-/// aproximación razonable para cadenas simples como Single-Site MH.
-struct ChainDiagnostics {
-    mean: f64,
-    std_dev: f64,
-    lag1_autocorr: f64,
-    ess: f64,
-}
-
-fn chain_diagnostics(chain: &[f64]) -> ChainDiagnostics {
-    let n = chain.len();
-    let mean = chain.iter().sum::<f64>() / n as f64;
-    let variance = chain.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
-    let std_dev = variance.sqrt();
-
-    let lag1_autocorr = if n > 1 && variance > 0.0 {
-        let cov: f64 = chain
-            .windows(2)
-            .map(|w| (w[0] - mean) * (w[1] - mean))
-            .sum::<f64>()
-            / (n - 1) as f64;
-        cov / variance
-    } else {
-        0.0
-    };
-
-    // ESS ≈ n * (1 - rho) / (1 + rho)  (rho = autocorrelacion lag-1)
-    let rho = lag1_autocorr.clamp(-0.999, 0.999);
-    let ess = n as f64 * (1.0 - rho) / (1.0 + rho);
-
-    ChainDiagnostics { mean, std_dev, lag1_autocorr, ess }
+// funcion auxiliar para pausar la ejecucion luego de cada demostracion
+fn pause() {
+    print!("\n   Presiona ENTER para continuar...");
+    use std::io::{self, Write};
+    io::stdout().flush().unwrap();
+    let mut buffer = String::new();
+    io::stdin().read_line(&mut buffer).unwrap();
 }
 
 fn print_header(title: &str) {
@@ -75,6 +51,10 @@ fn print_ok(msg: &str) {
 
 fn print_err(msg: &str) {
     println!("   {RED}[ERROR]{RESET} {msg}");
+}
+
+fn print_warn(msg: &str) {
+    println!("   {YELLOW}[AVISO]{RESET} {msg}");
 }
 
 /// Imprime encabezado + modelo fuente, corre el bloque de la demo,
@@ -205,8 +185,11 @@ fn demo_ssmh(rng: &mut StdRng) {
         match single_site_mh(model, rng, steps, warmup) {
             Ok(chain) => {
                 let mean: f64 = chain.iter().map(as_f64).sum::<f64>() / (steps as f64);
+                let var: f64 = chain.iter().map(|x| (as_f64(x) - mean).powi(2)).sum::<f64>() / (steps as f64);
+                let std_err = (var / steps as f64).sqrt();
+
                 print_ok(&format!(
-                    "Pendiente 'm' estimada: {mean:.4} (Esperada: ~2.0000)"
+                    "Pendiente 'm' estimada: {mean:.4} ± {std_err:.4} (Esperada: 2.0)"
                 ));
             }
             Err(e) => print_err(&format!("Fallo en SSMH: {e}")),
@@ -284,16 +267,220 @@ fn demo_enum(_rng: &mut StdRng) {
 
         match enumerate_traces(model, 1000) {
             Ok(runs) => {
-                let (pmf, log_z) = posterior_table(&runs);
+                let (mut pmf, log_z) = posterior_table(&runs);
                 print_ok(&format!("Enumeracion completada. Log Evidence (Z): {log_z:.4}"));
-                println!("   Distribucion posterior sobre el genotipo:");
-                for (val, prob) in pmf {
-                    println!("      Genotipo {val:?}: {prob:.4}");
+                
+                // 1. Ordenamos la tabla para que se vea profesional (de menor a mayor valor)
+                pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
+
+                // 2. Encabezado de la tabla
+                println!("\n   {:<10} | {:<12} | {:<12}", "Genotipo", "Prob", "LogMass");
+                println!("   {:-<40}", "");
+                
+                // 3. Impresión formateada
+                for (val, prob, lw) in pmf {
+                    let val_str = format!("{}", val); // Usa Display para que imprima "1" en vez de "Int(1)"
+                    
+                    if prob < 0.0001 && prob > 0.0 {
+                        println!("      {:<10} | {:>10.4e} | {:>10.4}", val_str, prob, lw);
+                    } else {
+                        println!("      {:<10} | {:>10.4}   | {:>10.4}", val_str, prob, lw);
+                    }
                 }
             }
             Err(e) => print_err(&format!("Fallo en Enumeracion Exacta: {e}")),
         }
     });
+}
+
+// ============================================================================
+// MODO ARCHIVO: cargo run -- <archivo.hoppl> <algoritmo>
+// ============================================================================
+
+/// Algoritmos soportados en modo archivo.
+#[derive(Debug, Clone, Copy)]
+enum Algorithm {
+    Lw,
+    Ssmh,
+    Smc,
+    Bbvi,
+    Enumeration,
+}
+
+impl Algorithm {
+    fn parse(name: &str) -> Option<Self> {
+        // Se acepta "exact enumeration" (con espacio) tal como lo pide el enunciado,
+        // ademas de variantes mas comodas para la terminal (sin espacios).
+        match name.to_lowercase().replace('_', "-").as_str() {
+            "lw" => Some(Algorithm::Lw),
+            "ssmh" => Some(Algorithm::Ssmh),
+            "smc" => Some(Algorithm::Smc),
+            "bbvi" => Some(Algorithm::Bbvi),
+            "exact-enumeration" | "exact enumeration" | "enum" | "exact" | "enumeration" => {
+                Some(Algorithm::Enumeration)
+            }
+            _ => None,
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Algorithm::Lw => "Likelihood Weighting",
+            Algorithm::Ssmh => "Single-Site Metropolis-Hastings",
+            Algorithm::Smc => "Sequential Monte Carlo",
+            Algorithm::Bbvi => "Black-Box Variational Inference",
+            Algorithm::Enumeration => "Exact Enumeration",
+        }
+    }
+}
+
+/// Lee el modelo desde el archivo .hoppl indicado. Termina el programa
+/// con un mensaje claro si el archivo no existe o no se puede leer.
+fn load_model_file(path: &str) -> String {
+    match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(e) => {
+            print_err(&format!("No se pudo leer el archivo '{path}': {e}"));
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Corre el algoritmo seleccionado sobre un modelo arbitrario cargado desde
+/// disco. A diferencia de las demos hardcodeadas, aca no conocemos el valor
+/// analitico esperado, asi que solo reportamos estadisticos generales.
+fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
+    // Parametros por defecto (mismos que usan las demos hardcodeadas).
+    const N_PARTICLES_LW: usize = 5000;
+    const N_PARTICLES_SMC: usize = 2000;
+    const SSMH_STEPS: usize = 4000;
+    const SSMH_WARMUP: usize = 1000;
+    const BBVI_STEPS: usize = 250;
+    const BBVI_SAMPLES: usize = 20;
+    const BBVI_LR: f64 = 0.05;
+    const ENUM_MAX_TRACES: usize = 100000;
+
+    print_header(&format!("MODO ARCHIVO: {}", algorithm.label()));
+    println!("Modelo cargado:\n{}", model.trim());
+    println!();
+
+    let start = Instant::now();
+
+    match algorithm {
+        Algorithm::Lw => {
+            println!("Ejecutando LW con {N_PARTICLES_LW} particulas...");
+            match likelihood_weighting(model, N_PARTICLES_LW, rng) {
+                Ok((vals, weights)) => {
+                    let mean: f64 = vals
+                        .iter()
+                        .zip(weights.iter())
+                        .map(|(v, w)| as_f64(v) * w)
+                        .sum();
+                    print_ok(&format!("Media a posteriori estimada: {mean:.4}"));
+                }
+                Err(e) => print_err(&format!("Fallo en Likelihood Weighting: {e}")),
+            }
+        }
+        Algorithm::Smc => {
+            println!("Ejecutando SMC con {N_PARTICLES_SMC} particulas sincronizadas...");
+            match run_smc(model, N_PARTICLES_SMC, rng) {
+                Ok(vals) => {
+                    let mean: f64 = vals.iter().map(as_f64).sum::<f64>() / (N_PARTICLES_SMC as f64);
+                    print_ok(&format!("Valor esperado estimado: {mean:.4}"));
+                }
+                Err(e) => print_err(&format!("Fallo en SMC: {e}")),
+            }
+        }
+        Algorithm::Ssmh => {
+            println!("Ejecutando SSMH (Pasos: {SSMH_STEPS}, Warmup: {SSMH_WARMUP})...");
+            match single_site_mh(model, rng, SSMH_STEPS, SSMH_WARMUP) {
+                Ok(chain) => {
+                    let mean: f64 = chain.iter().map(as_f64).sum::<f64>() / (SSMH_STEPS as f64);
+                    let var: f64 = chain
+                        .iter()
+                        .map(|x| (as_f64(x) - mean).powi(2))
+                        .sum::<f64>()
+                        / (SSMH_STEPS as f64);
+                    let std_err = (var / SSMH_STEPS as f64).sqrt();
+                    print_ok(&format!("Valor estimado: {mean:.4} ± {std_err:.4}"));
+                }
+                Err(e) => print_err(&format!("Fallo en SSMH: {e}")),
+            }
+        }
+        Algorithm::Bbvi => {
+            println!(
+                "Optimizando ELBO con Adam (Pasos: {BBVI_STEPS}, Muestras/Lote: {BBVI_SAMPLES}, LR: {BBVI_LR})..."
+            );
+            match run_bbvi(model, BBVI_STEPS, BBVI_SAMPLES, BBVI_LR, rng) {
+                Ok((elbo_history, theta_opt)) => {
+                    let elbo_inicial = elbo_history.first().unwrap();
+                    let elbo_final = elbo_history.last().unwrap();
+
+                    println!("\nResultados de la Optimizacion Variacional:");
+                    println!("   ELBO Inicial : {elbo_inicial:.4e}");
+                    println!("   ELBO Final   : {elbo_final:.4e}");
+
+                    if elbo_final > elbo_inicial {
+                        print_ok("La ELBO ascendio con exito. El optimizador redujo la divergencia.");
+                    } else {
+                        print_warn("La ELBO no subio significativamente.");
+                    }
+
+                    println!("\n   Parametros Variacionales Optimizados (Theta):");
+                    for (addr, params) in theta_opt {
+                        let fmt_addr = addr.join("/");
+                        println!("      Direccion [{fmt_addr}]: {params:?}");
+                    }
+                }
+                Err(e) => print_err(&format!("Fallo en BBVI: {e}")),
+            }
+        }
+        Algorithm::Enumeration => {
+            println!("Explorando todos los estados posibles...");
+            match enumerate_traces(model, ENUM_MAX_TRACES) {
+                Ok(runs) => {
+                    let (mut pmf, log_z) = posterior_table(&runs);
+                    
+                    // 1. Ordenar para que la tabla sea consistente (0, 1, 2...)
+                    pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
+                    
+                    println!("\n   Enumeracion completada. Log Evidence (Z): {log_z:.4}");
+                    // Usamos formato alineado fijo para el encabezado
+                    println!("   {:<10} | {:<12} | {:<12}", "Valor", "Prob", "LogMass");
+                    println!("   {:-<40}", "");
+                    
+                    for (val, prob, lw) in pmf {
+                        // 2. Usamos "{}" en lugar de "{:?}" para llamar a tu Display
+                        let val_str = format!("{}", val); 
+                        
+                        // 3. Formato dinámico: si es muy chico, notación científica
+                        if prob < 0.0001 && prob > 0.0 {
+                            println!("      {:<10} | {:>10.4e} | {:>10.4}", val_str, prob, lw);
+                        } else {
+                            println!("      {:<10} | {:>10.4}   | {:>10.4}", val_str, prob, lw);
+                        }
+                    }
+                }
+                Err(e) => print_err(&format!("Fallo: {e}")),
+            }
+        }
+}
+
+    println!("   (tiempo: {:.2?})", start.elapsed());
+}
+
+fn print_usage(demos: &[Demo]) {
+    eprintln!("Uso:");
+    eprintln!("  cargo run                              -> corre todas las demos hardcodeadas");
+    eprintln!("  cargo run -- <numero>                  -> corre una demo especifica (1-{})", demos.len());
+    eprintln!("  cargo run -- <archivo.hoppl> <algoritmo> -> corre un modelo propio");
+    eprintln!();
+    eprintln!("Algoritmos disponibles: lw, ssmh, smc, bbvi, exact-enumeration (alias: enum, exact)");
+    eprintln!();
+    eprintln!("Demos disponibles:");
+    for d in demos {
+        eprintln!("   {}: {}", d.id, d.label);
+    }
 }
 
 // ============================================================================
@@ -304,7 +491,6 @@ fn main() {
     println!("Autor: Martin Nievas Wilberger");
 
     let args: Vec<String> = env::args().collect();
-    let selected: Option<usize> = args.get(1).and_then(|s| s.parse().ok());
 
     let demos: Vec<Demo> = vec![
         Demo { id: 1, label: "Likelihood Weighting", run: demo_lw },
@@ -315,13 +501,45 @@ fn main() {
         Demo { id: 6, label: "Exact Enumeration", run: demo_enum },
     ];
 
+    // ── Caso 1: cargo run -- <archivo.hoppl> <algoritmo> ──────────────────
+    // Se detecta porque hay 2+ argumentos y el primero NO es un numero.
+    if args.len() >= 3 && args[1].parse::<usize>().is_err() {
+        let file_path = &args[1];
+        let algo_name = &args[2];
+
+        let algorithm = match Algorithm::parse(algo_name) {
+            Some(a) => a,
+            None => {
+                print_err(&format!("Algoritmo desconocido: '{algo_name}'"));
+                print_usage(&demos);
+                std::process::exit(1);
+            }
+        };
+
+        let model = load_model_file(file_path);
+        let mut rng = StdRng::seed_from_u64(42);
+        run_algorithm_on_model(algorithm, &model, &mut rng);
+        return;
+    }
+
+    // ── Caso 2: cargo run -- <numero> -> corre una demo especifica ────────
+    let selected: Option<usize> = args.get(1).and_then(|s| s.parse().ok());
+
     if let Some(n) = selected {
         if !demos.iter().any(|d| d.id == n) {
             eprintln!("Numero de demo invalido: {n}. Usa un valor entre 1 y {}.", demos.len());
+            print_usage(&demos);
             std::process::exit(1);
         }
+    } else if args.len() >= 2 {
+        // Se paso un solo argumento que no es un numero valido de demo
+        // (y no llego a matchear el caso de archivo+algoritmo, que requiere 2 args).
+        print_err(&format!("Argumento invalido: '{}'.", args[1]));
+        print_usage(&demos);
+        std::process::exit(1);
     }
 
+    // ── Caso 3: cargo run (sin argumentos) -> corre todas las demos ───────
     let total_start = Instant::now();
 
     for demo in &demos {
@@ -330,19 +548,21 @@ fn main() {
                 continue;
             }
         }
-        // Cada demo arranca con su propia seed derivada del id, en vez de
-        // compartir un rng entre todas. Así la demo N da siempre el mismo
-        // resultado sin importar si corrió sola o junto a las demás.
+
         let mut demo_rng = StdRng::seed_from_u64(42 + demo.id as u64);
         (demo.run)(&mut demo_rng);
+
+        // Llamamos a pause si el usuario NO seleccionó una demo única
+        if selected.is_none() {
+            pause();
+        }
     }
 
     print_header("FIN DE LA DEMOSTRACION - HOPPL EN RUST");
     println!("Tiempo total: {:.2?}", total_start.elapsed());
+
     if selected.is_none() {
-        println!("Tip: ejecuta `cargo run -- <numero>` para correr una sola demo (1-6).");
-        for demo in &demos {
-            println!("   {} -> {}", demo.id, demo.label);
-        }
+        println!("Tip: ejecuta `cargo run -- <numero>` para correr una sola demo (1-{}).", demos.len());
+        println!("Tip: ejecuta `cargo run -- <archivo.hoppl> <algoritmo>` para correr un modelo propio.");
     }
 }

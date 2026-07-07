@@ -1,0 +1,8 @@
+; dos monedas; observamos evidencia de que su suma es cercana a 2.
+; modelo totalmente discreto (4 trazas): la enumeracion exacta da el posterior
+; sin ningun error de aproximacion.
+(let [a (if (sample (bernoulli 0.5)) 1 0)
+      b (if (sample (bernoulli 0.5)) 1 0)
+      suma (+ a b)]
+  (observe (normal 2 1) suma)
+  suma)

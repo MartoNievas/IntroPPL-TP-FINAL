@@ -1,0 +1,8 @@
+; distribucion geometrica por recursion: cuenta cuantos intentos hasta el primer exito
+; con p = 0.3, la media teorica es (1-p)/p = 2.333
+(defn geom []
+  (if (sample (bernoulli 0.3))
+      0
+      (+ 1 (geom))))
+
+(geom)
