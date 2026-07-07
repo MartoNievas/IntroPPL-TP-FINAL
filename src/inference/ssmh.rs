@@ -5,10 +5,10 @@ El mismo realiza una camina aleatoria sobre la traza de ejecucion.
 
 */
 
-use std::collections::{HashMap, HashSet};
-use crate::interpreter::{initial_machine, resume, send, Addr, Machine, Msg};
+use crate::interpreter::{Addr, Machine, Msg, initial_machine, resume, send};
 use crate::parser::value::RVal;
 use rand::prelude::*;
+use std::collections::{HashMap, HashSet};
 
 /// La Traza captura el historial completo de una ejecución del programa.
 #[derive(Clone, Debug, Default)]
@@ -19,12 +19,16 @@ pub struct Trace {
 }
 
 fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
-    let num_s : f64 = prop.sample_log_probs.iter()
+    let num_s: f64 = prop
+        .sample_log_probs
+        .iter()
         .filter(|&(k, _)| k != a0 && curr.values.contains_key(k))
         .map(|(_, p)| p)
         .sum();
 
-    let den_s: f64 = curr.sample_log_probs.iter()
+    let den_s: f64 = curr
+        .sample_log_probs
+        .iter()
         .filter(|&(k, _)| k != a0 && prop.values.contains_key(k))
         .map(|(_, p)| p)
         .sum();
@@ -43,7 +47,6 @@ fn run_trace<R: Rng + ?Sized>(
     x0: Option<&Addr>,
     cache: &HashMap<Addr, RVal>,
 ) -> Result<(RVal, Trace), String> {
-
     let mut trace = Trace::default();
 
     loop {
@@ -64,20 +67,16 @@ fn run_trace<R: Rng + ?Sized>(
 
                 send(&mut next_m, x);
                 m = next_m;
-            },
+            }
             Msg::Observe(addr, dist, y_obs, mut next_m) => {
-                
                 let lp = dist.log_prob(&y_obs);
 
                 trace.observe_log_probs.insert(addr, lp);
 
                 send(&mut next_m, y_obs);
                 m = next_m;
-            },
-            Msg::Done(value, _) => {
-                return Ok((value, trace))
-            },
-            
+            }
+            Msg::Done(value, _) => return Ok((value, trace)),
         }
     }
 }
@@ -89,23 +88,22 @@ def single_site_mh(program, rng, steps, warmup=2000):
     chain = []
     for i in range(steps + warmup):
         a0 = list(X)[int(rng.integers(len(X)))]     # elegir una dirección/sitio para cambiar
-        
+
         # 1. Proponer: re-ejecutar con x0=a0, reutilizando la traza actual X como caché
         val2, X2, S2, O2 = run(program, rng, a0, X)
-        
+
         # 2. Calcular el ratio de aceptación en escala logarítmica
         log_alpha = mh_log_alpha(X, X2, S, S2, O, O2, a0)
-        
+
         # 3. Paso de aceptación/rechazo (si ln(u) < log_alpha, aceptamos la propuesta)
         if np.log(rng.uniform()) < log_alpha:
             value, X, S, O = val2, X2, S2, O2
-            
+
         if i >= warmup:
             chain.append(float(value))
     return np.array(chain, dtype=float)
 
 */
-
 
 pub fn single_site_mh<R: Rng + ?Sized>(
     program: &str,
@@ -119,7 +117,8 @@ pub fn single_site_mh<R: Rng + ?Sized>(
     let mut chain = Vec::with_capacity(steps);
 
     for i in 0..(steps + warmup) {
-        let addresses: Vec<Addr> = curr_trace.values.keys().cloned().collect();
+        let mut addresses: Vec<Addr> = curr_trace.values.keys().cloned().collect();
+        addresses.sort();
 
         if addresses.is_empty() {
             if i >= warmup {
@@ -127,7 +126,7 @@ pub fn single_site_mh<R: Rng + ?Sized>(
             }
             continue;
         }
-        
+
         let a0_idx = rng.random_range(0..addresses.len());
         let a0 = &addresses[a0_idx];
 
@@ -144,7 +143,6 @@ pub fn single_site_mh<R: Rng + ?Sized>(
         if i >= warmup {
             chain.push(curr_val.clone());
         }
-
     }
     Ok(chain)
 }

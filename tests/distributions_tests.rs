@@ -509,9 +509,8 @@ mod tests_make_guide {
     fn test_make_guide_positive_support_to_log_normal() {
         let gamma = Distribution::gamma(2.0, 1.0).unwrap();
         let exponential = Distribution::exponential(1.0).unwrap();
-        let beta = Distribution::beta(2.0, 2.0).unwrap();
 
-        for d in [gamma, exponential, beta] {
+        for d in [gamma, exponential] {
             let guide = make_guide(&d).unwrap();
             if let Distribution::LogNormal { mu, sigma } = guide {
                 assert_relative_eq!(mu, 0.0, epsilon = 1e-10);

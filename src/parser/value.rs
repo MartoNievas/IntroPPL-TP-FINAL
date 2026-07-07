@@ -24,6 +24,26 @@ pub enum RVal {
 
     Closure(MClosure),
 }
+
+impl RVal {
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            RVal::Float(f) => Some(*f),
+            RVal::Int(i) => Some(*i as f64),
+            RVal::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            _ => None,
+        }
+    }
+
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            RVal::Float(f) => Some(*f as i64),
+            RVal::Bool(b) => if *b { Some(1) } else { Some(0) },
+            RVal::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+}
  
 impl PartialEq for RVal {
     fn eq(&self, other: &Self) -> bool {

@@ -1,6 +1,7 @@
 use PPL_TP_FINAL::inference::lw::likelihood_weighting;
 use PPL_TP_FINAL::inference::smc::run_smc;
 use PPL_TP_FINAL::inference::ssmh::single_site_mh;
+use PPL_TP_FINAL::inference::exact_enumeration::*;
 use PPL_TP_FINAL::parser::value::RVal;
 
 use rand::rngs::StdRng;
@@ -11,15 +12,6 @@ use rand::SeedableRng;
 const CONJUGATE_MODEL: &str = "(let [mu (sample (normal 0 1))] (observe (normal mu 1) 2.3) mu)";
 const EXACT_MEAN: f64 = 1.15;
 const TOLERANCE: f64 = 0.15; // Tolerancia permitida para los algoritmos estocásticos
-
-/// Función auxiliar para extraer el valor f64 de un RVal
-fn as_f64(val: &RVal) -> f64 {
-    match val {
-        RVal::Float(f) => *f,
-        RVal::Int(i) => *i as f64,
-        _ => panic!("Expected a numeric value"),
-    }
-}
 
 #[cfg(test)]
 mod inference_algorithms_tests {
@@ -44,7 +36,8 @@ mod inference_algorithms_tests {
         // 2. Calculamos la media ponderada estimada
         let mut estimated_mean = 0.0;
         for (v, w) in values.iter().zip(weights.iter()) {
-            estimated_mean += as_f64(v) * w;
+            let value : f64 = v.as_f64().expect("No numeric value");
+            estimated_mean += value * w;
         }
 
         // 3. Verificamos que converja al valor analítico
@@ -68,7 +61,7 @@ mod inference_algorithms_tests {
 
         // En SMC las partículas devueltas ya están re-muestreadas, por lo que 
         // tienen peso uniforme. Calculamos la media empírica simple.
-        let estimated_mean: f64 = results.iter().map(as_f64).sum::<f64>() / (n_particles as f64);
+        let estimated_mean: f64 = results.iter().map(|value| value.as_f64().expect("No numeric value")).sum::<f64>() / (n_particles as f64);
 
         let error = (estimated_mean - EXACT_MEAN).abs();
         assert!(
@@ -91,7 +84,7 @@ mod inference_algorithms_tests {
         assert_eq!(chain.len(), steps);
 
         // Calculamos la media de la cadena de Markov resultante
-        let estimated_mean: f64 = chain.iter().map(as_f64).sum::<f64>() / (steps as f64);
+        let estimated_mean: f64 = chain.iter().map(|value| value.as_f64().expect("No numeric value")).sum::<f64>() / (steps as f64);
 
         let error = (estimated_mean - EXACT_MEAN).abs();
         assert!(
@@ -151,4 +144,43 @@ fn test_bbvi_convergence_coin_flip() {
     assert!(!theta_opt.is_empty(), "Expected to optimize at least one probabilistic site");
     println!("Initial ELBO: {:.4} -> Final ELBO: {:.4}", initial_elbo, final_elbo);
 }
+
+#[test]
+    fn test_exact_enumeration_8_bit_problem() {
+        let bits8 = r#"
+        (let [b1 (if (sample (bernoulli 0.5)) 1 0)
+              b2 (if (sample (bernoulli 0.5)) 1 0)
+              b3 (if (sample (bernoulli 0.5)) 1 0)
+              b4 (if (sample (bernoulli 0.5)) 1 0)
+              b5 (if (sample (bernoulli 0.5)) 1 0)
+              b6 (if (sample (bernoulli 0.5)) 1 0)
+              b7 (if (sample (bernoulli 0.5)) 1 0)
+              b8 (if (sample (bernoulli 0.5)) 1 0)
+              total (+ b1 b2 b3 b4 b5 b6 b7 b8)]
+          (observe (normal 7 1) total)
+          total)
+        "#;
+
+        let runs8 = enumerate_traces(bits8, 10_000).unwrap();
+        let (pmf8, log_z8) = posterior_table(&runs8);
+
+        assert_eq!(runs8.len(), 256);
+        assert_eq!(pmf8.len(), 9);
+        
+        for i in 0..=8 {
+            assert!(pmf8.iter().any(|(val, _)| val.as_i64().expect("No numeric value") == i));
+        }
+
+        // Relajamos la precisión a 1e-8 (Equivalente al np.allclose de Python)
+        let sum_probs: f64 = pmf8.iter().map(|(_, prob)| prob).sum();
+        assert!((sum_probs - 1.0).abs() < 1e-8, "La suma de probabilidades dio: {}", sum_probs);
+
+        let expected_log_z = -2.9387946656298647;
+        assert!((log_z8 - expected_log_z).abs() < 1e-8);
+
+        let mean_enum: f64 = pmf8.iter().map(|(val, prob)| val.as_i64().expect("No numeric value") as f64 * prob).sum();
+        let expected_mean = 6.000655098870;
+        assert!((mean_enum - expected_mean).abs() < 1e-8);
+    }
+
 }

@@ -10,14 +10,13 @@ Todas las distrbuciones soportan las operaciones:
 
 use core::f64;
 
+use crate::parser::value::RVal;
 use rand::prelude::*;
 use rand_distr::Distribution as RandDistribution;
-use statrs::function::gamma::ln_gamma as lgamma;
-use crate::parser::value::RVal;
 use rand_distr::{
     Bernoulli as RBernoulli,
     Beta as RBeta,
-    Exp as RExp,               // con el enum `Distribution`
+    Exp as RExp, // con el enum `Distribution`
     Gamma as RGamma,
     LogNormal as RLogNormal,
     Normal as RNormal,
@@ -26,6 +25,7 @@ use rand_distr::{
     multi::Dirichlet as RDirichlet,
     weighted::WeightedIndex,
 };
+use statrs::function::gamma::ln_gamma as lgamma;
 
 // Definición de constante en Rust
 const LOG2PI: f64 = 1.8378770664093453;
@@ -39,8 +39,8 @@ pub enum Distribution {
     Beta { alpha: f64, beta: f64 },
     Gamma { shape: f64, rate: f64 }, // shape/rate, como en el libro
     Poisson { lam: f64 },
-    Bernoulli { p: f64 }, // "flip"
-    Discrete { probs: Vec<f64> }, // categorical sobre {0..K-1}, ya normalizado
+    Bernoulli { p: f64 },                 // "flip"
+    Discrete { probs: Vec<f64> },         // categorical sobre {0..K-1}, ya normalizado
     UniformDiscrete { lo: i64, hi: i64 }, // enteros en [lo, hi)
     Dirichlet { alphas: Vec<f64> },
 }
@@ -50,7 +50,6 @@ pub enum Distribution {
 // ---------------------------------------------------------------------------
 
 impl Distribution {
-    
     // Constructor functions for each distribution type, with validation of parameters
 
     pub fn normal(mu: f64, sigma: f64) -> Result<Self, String> {
@@ -76,7 +75,10 @@ impl Distribution {
 
     pub fn exponential(rate: f64) -> Result<Self, String> {
         if rate <= 0.0 {
-            return Err("Invalid Exponential distribution parameters: 'rate' must be strictly positive".to_string());
+            return Err(
+                "Invalid Exponential distribution parameters: 'rate' must be strictly positive"
+                    .to_string(),
+            );
         }
         Ok(Distribution::Exponential { rate })
     }
@@ -134,8 +136,8 @@ impl Distribution {
             alphas: alphas.to_vec(),
         })
     }
-}    
-    
+}
+
 // Nombres de primitivos de distribuciones, para mostrar en errores y logs
 impl Distribution {
     pub fn name(&self) -> &'static str {
@@ -155,10 +157,9 @@ impl Distribution {
     }
 }
 
-// SAMPLES: 
+// SAMPLES:
 
 impl Distribution {
-    
     // samples un valor aleatorio de la distribución, usando un generador de números aleatorios `rng`.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> RVal {
         match self {
@@ -216,60 +217,88 @@ impl Distribution {
 impl Distribution {
     pub fn log_prob(&self, x: &RVal) -> f64 {
         match (self, x) {
-            (Distribution::Normal { mu, sigma }, RVal::Float(x)) => {
-                let z = (x - mu) / sigma;
-                -0.5 * z * z - (sigma.ln() + 0.5 * LOG2PI)
-            }
-            (Distribution::LogNormal { mu, sigma }, RVal::Float(x)) => {
-                if *x <= 0.0 {
-                    f64::NEG_INFINITY
-                } else {
-                    let log_x = x.ln();
-                    let z = (log_x - mu) / sigma;
-                    -0.5 * z * z - (sigma.ln() + log_x + 0.5 * LOG2PI)
-                }
-            }
-            (Distribution::Uniform { a, b }, RVal::Float(x)) => {
-                if *a <= *x && *x <= *b {
-                    -(b - a).ln()
+            (Distribution::Normal { mu, sigma }, _) => {
+                if let Some(x) = x.as_f64() {
+                    let z = (x - mu) / sigma;
+                    -0.5 * z * z - (sigma.ln() + 0.5 * LOG2PI)
                 } else {
                     f64::NEG_INFINITY
                 }
             }
-            (Distribution::Exponential { rate}, RVal::Float(x)) => {
-                if *x < 0.0 {
-                    f64::NEG_INFINITY
+            (Distribution::LogNormal { mu, sigma }, _) => {
+                if let Some(x) = x.as_f64() {
+                    if x <= 0.0 {
+                        f64::NEG_INFINITY
+                    } else {
+                        let log_x = x.ln();
+                        let z = (log_x - mu) / sigma;
+                        -0.5 * z * z - (sigma.ln() + log_x + 0.5 * LOG2PI)
+                    }
                 } else {
-                    rate.ln() - rate * x
+                    f64::NEG_INFINITY
                 }
             }
-            (Distribution::Beta { alpha, beta }, RVal::Float(x)) => {
-                if !(0.0 < *x && *x < 1.0) {
-                    f64::NEG_INFINITY
+            (Distribution::Uniform { a, b }, _) => {
+                if let Some(x) = x.as_f64() {
+                    if *a <= x && x <= *b {
+                        -(b - a).ln()
+                    } else {
+                        f64::NEG_INFINITY
+                    }
                 } else {
-                    let log_beta = lgamma(*alpha) + lgamma(*beta) - lgamma(alpha + beta);
-                    (alpha - 1.0) * x.ln() + (beta - 1.0) * (1.0 - x).ln() - log_beta
+                    f64::NEG_INFINITY
                 }
             }
-            (Distribution::Gamma { shape, rate}, RVal::Float(x)) => {
-                if *x <= 0.0 {
-                    f64::NEG_INFINITY
+            (Distribution::Exponential { rate }, _) => {
+                if let Some(x) = x.as_f64() {
+                    if x < 0.0 {
+                        f64::NEG_INFINITY
+                    } else {
+                        rate.ln() - rate * x
+                    }
                 } else {
-                    shape * rate.ln() - lgamma(*shape) + (shape - 1.0) * x.ln() - rate * x
+                    f64::NEG_INFINITY
                 }
             }
-            (Distribution::Poisson { lam },RVal::Int(k)) => {
+            (Distribution::Beta { alpha, beta }, _) => {
+                if let Some(x) = x.as_f64() {
+                    if !(0.0 < x && x < 1.0) {
+                        f64::NEG_INFINITY
+                    } else {
+                        let log_beta = lgamma(*alpha) + lgamma(*beta) - lgamma(alpha + beta);
+                        (alpha - 1.0) * x.ln() + (beta - 1.0) * (1.0 - x).ln() - log_beta
+                    }
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            (Distribution::Gamma { shape, rate }, _) => {
+                if let Some(x) = x.as_f64() {
+                    if x <= 0.0 {
+                        f64::NEG_INFINITY
+                    } else {
+                        shape * rate.ln() - lgamma(*shape) + (shape - 1.0) * x.ln() - rate * x
+                    }
+                } else {
+                    f64::NEG_INFINITY
+                }
+            }
+            (Distribution::Poisson { lam }, RVal::Int(k)) => {
                 if *k < 0 {
                     f64::NEG_INFINITY
                 } else {
                     *k as f64 * lam.ln() - lam - lgamma((*k + 1) as f64)
                 }
             }
-            (Distribution::Bernoulli { p },RVal::Bool(b)) => {
+            (Distribution::Bernoulli { p }, RVal::Bool(b)) => {
                 if *b {
                     if *p > 0.0 { p.ln() } else { f64::NEG_INFINITY }
                 } else {
-                    if *p < 1.0 { (1.0 - *p).ln() } else { f64::NEG_INFINITY }
+                    if *p < 1.0 {
+                        (1.0 - *p).ln()
+                    } else {
+                        f64::NEG_INFINITY
+                    }
                 }
             }
             (Distribution::Discrete { probs }, RVal::Int(k)) => {
@@ -288,28 +317,33 @@ impl Distribution {
                 }
             }
             (Distribution::Dirichlet { alphas }, RVal::List(x_vec)) => {
-            // Extraer f64 de cada RVal::Float
-            let xs: Vec<f64> = match x_vec.iter().map(|v| match v {
-                RVal::Float(f) => Ok(*f),
-                RVal::Int(i)   => Ok(*i as f64),
-                _              => Err(()),
-            }).collect::<Result<Vec<_>, _>>() {
-                Ok(v)  => v,
-                Err(_) => return f64::NEG_INFINITY,
-            };
+                // Extraer f64 de cada RVal::Float
+                let xs: Vec<f64> = match x_vec
+                    .iter()
+                    .map(|v| match v {
+                        RVal::Float(f) => Ok(*f),
+                        RVal::Int(i) => Ok(*i as f64),
+                        _ => Err(()),
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(v) => v,
+                    Err(_) => return f64::NEG_INFINITY,
+                };
 
-            if xs.len() != alphas.len() || xs.iter().any(|&v| v <= 0.0) {
-                return f64::NEG_INFINITY;
-            }
+                if xs.len() != alphas.len() || xs.iter().any(|&v| v <= 0.0) {
+                    return f64::NEG_INFINITY;
+                }
 
-            let log_b: f64 = alphas.iter().map(|&a| lgamma(a)).sum::<f64>()
-                - lgamma(alphas.iter().sum());
+                let log_b: f64 =
+                    alphas.iter().map(|&a| lgamma(a)).sum::<f64>() - lgamma(alphas.iter().sum());
 
-            alphas.iter()
-                .zip(xs.iter())
-                .map(|(&a, &x)| (a - 1.0) * x.ln())
-                .sum::<f64>()
-                - log_b
+                alphas
+                    .iter()
+                    .zip(xs.iter())
+                    .map(|(&a, &x)| (a - 1.0) * x.ln())
+                    .sum::<f64>()
+                    - log_b
             }
             _ => f64::NEG_INFINITY, // incompatible value type for the distribution
         }
@@ -325,26 +359,26 @@ impl Distribution {
             Distribution::Normal { mu, sigma } => Some(vec![*mu, sigma.ln()]),
             Distribution::LogNormal { mu, sigma } => Some(vec![*mu, sigma.ln()]),
             Distribution::Bernoulli { p } => {
-                let p_clamped = p.max(1e-12).min(1.0 - 1e-12);
+                let p_clamped = p.clamp(1e-12, 1.0 - 1e-12); 
                 Some(vec![(p_clamped / (1.0 - p_clamped)).ln()])
             }
             Distribution::Discrete { probs } => {
-                Some(probs.iter().map(|&p| p.max(1e-12).ln()).collect()) // log-probs, evitando log(0)
+                Some(probs.iter().map(|&p| p.max(1e-12).ln()).collect())
             }
             _ => None, // otras distribuciones no tienen parámetros continuos
         }
     }
 
-        /// Nueva instancia a partir de un List de parámetros no restringidos.
+    /// Nueva instancia a partir de un List de parámetros no restringidos.
     pub fn with_params(&self, theta: &[f64]) -> Option<Distribution> {
         match self {
             Distribution::Normal { .. } => Some(Distribution::Normal {
                 mu: theta[0],
-                sigma: theta[1].exp(),
+                sigma: theta[1].exp().max(1e-6),
             }),
             Distribution::LogNormal { .. } => Some(Distribution::LogNormal {
                 mu: theta[0],
-                sigma: theta[1].exp(),
+                sigma: theta[1].exp().max(1e-6),
             }),
             Distribution::Bernoulli { .. } => Some(Distribution::Bernoulli {
                 p: sigmoid(theta[0]),
@@ -374,7 +408,13 @@ impl Distribution {
             (Distribution::Discrete { probs }, RVal::Int(k)) => {
                 let mut onehot = vec![0.0; probs.len()];
                 onehot[*k as usize] = 1.0;
-                Some(onehot.iter().zip(probs.iter()).map(|(o, p)| o - p).collect())
+                Some(
+                    onehot
+                        .iter()
+                        .zip(probs.iter())
+                        .map(|(o, p)| o - p)
+                        .collect(),
+                )
             }
             _ => None,
         }
@@ -384,14 +424,18 @@ impl Distribution {
 fn sigmoid(x: f64) -> f64 {
     1.0 / (1.0 + (-x).exp())
 }
- 
+
 fn softmax(v: &[f64]) -> Vec<f64> {
-    let m = v.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let exps: Vec<f64> = v.iter().map(|x| (x - m).exp()).collect();
     let sum: f64 = exps.iter().sum();
-    exps.into_iter().map(|e| e / sum).collect()
-}
 
+    if sum == 0.0 { 
+        vec![1.0 / v.len() as f64; v.len()] 
+    } else {
+        exps.into_iter().map(|e| e / sum).collect()
+    }
+}
 
 // Tabla de constructores de distribuciones (Nombre primitivos visibles)
 
@@ -412,24 +456,87 @@ pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, Strin
     }
 }
 
-// Guide variacional optimizable con el mismo soporte que `d` (BBVI).
+// Funcion auxiliar para soporte finito en Exact Enumeration, la implemento en el modulo
+// de distribuciones porque es donde mas sentido tiene
 
+/**
+ 
+    Una distribucion debe cumplir con 2 propiedades para que tenga soporte finito:
+        1. Tiene que ser discreta, es decir que sus valores van a "saltos" como los numeros enteros
+        2. Y que tenga una cantidad de valores finitos posibles.
+
+ */
+
+ impl Distribution {
+    pub fn finite_support(&self) -> Result<Vec<(RVal, f64)>, String> {
+        match self {
+            Distribution::Bernoulli { p } => {
+                let mut out = Vec::new();
+                for b in [true, false] {
+                    let val = RVal::Bool(b);
+                    let lp = self.log_prob(&val);
+                    if lp != f64::NEG_INFINITY {
+                        out.push((val,lp));
+                    }
+                }
+                Ok(out)
+            }
+            
+            Distribution::Discrete { probs } => {
+                let mut out = Vec::new();
+                for i in 0..probs.len() {
+                    let val = RVal::Int(i as i64);
+                    let lp = self.log_prob(&val);
+                    if lp != f64::NEG_INFINITY {
+                        out.push((val, lp));
+                    }
+                }
+
+                Ok(out)
+            },
+
+            Distribution::UniformDiscrete { lo, hi } => {
+                let mut out = Vec::new();
+                for i in *lo..*hi {
+                    let val = RVal::Int(i);
+                    let lp = self.log_prob(&val);
+                    if lp != f64::NEG_INFINITY {
+                        out.push((val,lp));
+                    }
+                }
+                Ok(out)
+            },
+
+            _ => Err(format!(
+            "cannot enumerate {}. Exact enumeration here only handles finite discrete samples.",
+            self.name()
+            )),
+        }
+    }
+ }
+
+
+// Guide variacional optimizable con el mismo soporte que `d` (BBVI).
 pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
     match d {
         Distribution::Normal { mu, sigma } => Distribution::normal(*mu, *sigma),
         Distribution::LogNormal { mu, sigma } => Distribution::log_normal(*mu, *sigma),
-                Distribution::Gamma { .. } | Distribution::Exponential { .. } | Distribution::Beta { .. } => {
-            // soporte positivo -> inicialización tipo log-normal
+        Distribution::Gamma { .. }
+        | Distribution::Exponential { .. }  => {
+            // soporte positivo ilimitado -> inicialización tipo log-normal
             Distribution::log_normal(0.0, 1.0)
         }
         Distribution::Bernoulli { p } => Distribution::bernoulli(*p),
         Distribution::Discrete { probs } => Distribution::discrete(&probs.to_vec()),
-        other => Err(format!("No optimizable guide family available for the '{}' distribution in Black Box Variational Inference (BBVI)", other.name())),  
+        other => Err(format!(
+            "No optimizable guide family available for the '{}' distribution in Black Box Variational Inference (BBVI)",
+            other.name()
+        )),
     }
 }
 
 // --- repr legible, equivalente a __repr__ del Python ----------------------
- 
+
 impl std::fmt::Display for Distribution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let params: Vec<String> = match self {
@@ -448,3 +555,5 @@ impl std::fmt::Display for Distribution {
         write!(f, "({} {})", self.name(), params.join(" "))
     }
 }
+
+
