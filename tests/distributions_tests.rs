@@ -1,6 +1,6 @@
 // Tests para la implementación de distribuciones y sus operaciones: sample, log_prob, params, with_params, grad_log_prob
-use PPL_TP_FINAL::parser::distribution::{make_distribution, make_guide, Distribution};
-use PPL_TP_FINAL::parser::value::RVal;
+use ppl_tp_final::parser::distribution::{make_distribution, make_guide, Distribution};
+use ppl_tp_final::parser::value::RVal;
 use rand::rngs::ThreadRng;
 use approx::assert_relative_eq;
 

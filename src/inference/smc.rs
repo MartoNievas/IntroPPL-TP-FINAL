@@ -113,7 +113,7 @@ fn check_form(form: &Form) -> Result<bool, String> {
             Ok(false)
         }
         
-        Form::List(list) => {
+        Form::List(list, _list_type) => {
             if list.is_empty() {
                 return Ok(false);
             }
@@ -168,7 +168,7 @@ fn check_form(form: &Form) -> Result<bool, String> {
                     
                     "let" => {
                         if list.len() >= 3 {
-                            if let Form::List(binds) = &list[1] {
+                            if let Form::List(binds, _list_type) = &list[1] {
                                 let mut has_obs = false;
                                 // Revisamos las expresiones asignadas a las variables
                                 for i in (1..binds.len()).step_by(2) {
@@ -224,7 +224,7 @@ fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Ms
     }
 }
 
-/// Función auxiliar para re-muestreo: selecciona un índice según sus probabilidades categóricas.
+// Función auxiliar para re-muestreo: selecciona un índice según sus probabilidades categóricas.
 fn sample_categorical<R: Rng + ?Sized>(probs: &[f64], rng: &mut R) -> usize {
     let u: f64 = rng.random();
     let mut cumsum = 0.0;

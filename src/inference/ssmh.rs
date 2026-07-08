@@ -18,6 +18,48 @@ pub struct Trace {
     pub observe_log_probs: HashMap<Addr, f64>,
 }
 
+pub fn single_site_mh<R: Rng + ?Sized>(
+    program: &str,
+    rng: &mut R,
+    steps: usize,
+    warmup: usize,
+) -> Result<Vec<RVal>, String> {
+    let base_m = initial_machine(program)?;
+    let (mut curr_val, mut curr_trace) = run_trace(base_m.fork(), rng, None, &HashMap::new())?;
+
+    let mut chain = Vec::with_capacity(steps);
+
+    for i in 0..(steps + warmup) {
+        let mut addresses: Vec<Addr> = curr_trace.values.keys().cloned().collect();
+        addresses.sort();
+
+        if addresses.is_empty() {
+            if i >= warmup {
+                chain.push(curr_val.clone());
+            }
+            continue;
+        }
+
+        let a0_idx = rng.random_range(0..addresses.len());
+        let a0 = &addresses[a0_idx];
+
+        let (prop_val, prop_trace) = run_trace(base_m.fork(), rng, Some(a0), &curr_trace.values)?;
+
+        let log_alpha = mh_log_alpha(&curr_trace, &prop_trace, a0);
+        let u: f64 = rng.random();
+
+        if log_alpha >= 0.0 || u.ln() < log_alpha {
+            curr_val = prop_val;
+            curr_trace = prop_trace;
+        }
+
+        if i >= warmup {
+            chain.push(curr_val.clone());
+        }
+    }
+    Ok(chain)
+}
+
 fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
     let num_s: f64 = prop
         .sample_log_probs
@@ -79,70 +121,4 @@ fn run_trace<R: Rng + ?Sized>(
             Msg::Done(value, _) => return Ok((value, trace)),
         }
     }
-}
-
-/*
-
-def single_site_mh(program, rng, steps, warmup=2000):
-    value, X, S, O = run(program, rng, None, {})    # traza inicial: nada que remuestrear o reutilizar
-    chain = []
-    for i in range(steps + warmup):
-        a0 = list(X)[int(rng.integers(len(X)))]     # elegir una dirección/sitio para cambiar
-
-        # 1. Proponer: re-ejecutar con x0=a0, reutilizando la traza actual X como caché
-        val2, X2, S2, O2 = run(program, rng, a0, X)
-
-        # 2. Calcular el ratio de aceptación en escala logarítmica
-        log_alpha = mh_log_alpha(X, X2, S, S2, O, O2, a0)
-
-        # 3. Paso de aceptación/rechazo (si ln(u) < log_alpha, aceptamos la propuesta)
-        if np.log(rng.uniform()) < log_alpha:
-            value, X, S, O = val2, X2, S2, O2
-
-        if i >= warmup:
-            chain.append(float(value))
-    return np.array(chain, dtype=float)
-
-*/
-
-pub fn single_site_mh<R: Rng + ?Sized>(
-    program: &str,
-    rng: &mut R,
-    steps: usize,
-    warmup: usize,
-) -> Result<Vec<RVal>, String> {
-    let base_m = initial_machine(program)?;
-    let (mut curr_val, mut curr_trace) = run_trace(base_m.fork(), rng, None, &HashMap::new())?;
-
-    let mut chain = Vec::with_capacity(steps);
-
-    for i in 0..(steps + warmup) {
-        let mut addresses: Vec<Addr> = curr_trace.values.keys().cloned().collect();
-        addresses.sort();
-
-        if addresses.is_empty() {
-            if i >= warmup {
-                chain.push(curr_val.clone());
-            }
-            continue;
-        }
-
-        let a0_idx = rng.random_range(0..addresses.len());
-        let a0 = &addresses[a0_idx];
-
-        let (prop_val, prop_trace) = run_trace(base_m.fork(), rng, Some(a0), &curr_trace.values)?;
-
-        let log_alpha = mh_log_alpha(&curr_trace, &prop_trace, a0);
-        let u: f64 = rng.random();
-
-        if log_alpha >= 0.0 || u.ln() < log_alpha {
-            curr_val = prop_val;
-            curr_trace = prop_trace;
-        }
-
-        if i >= warmup {
-            chain.push(curr_val.clone());
-        }
-    }
-    Ok(chain)
 }

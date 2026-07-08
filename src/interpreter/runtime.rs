@@ -1,26 +1,14 @@
+/*
+
+Módulo que implementa el interprete como tal, este módulo se encarga de la ejecución del codigo,
+y comunicarse con la interfaz de mensajes para la inferencia.
+
+*/
+
 use super::machine::{Machine, Instr, Msg, Env, Addr, Closure};
 use crate::parser::sexpr::Form;
 use crate::parser::primitives::{is_primitive, make_primitives};
 use crate::parser::value::RVal;
-
-// Funcion auxiliar para empujar secuancias de expresiones
-
-fn push_body(c: &mut Vec<Instr>, body: &[Form], env: &Env, addr: Addr) {
-    let n = body.len();
-    if n == 0 {
-        return ;
-    }
-
-    for (i, expr) in body.iter().enumerate().rev() {
-        let mut sub_addr = addr.clone();
-        sub_addr.push(format!("body_{}", i));
-
-        if i < n - 1 {
-            c.push(Instr::Discard);
-        }
-        c.push(Instr::Eval(expr.clone(), env.clone(), sub_addr));
-    }
-}
 
 // Ejecuta instrucciones del stack de control hasta encontrar un efecto probabilistico
 pub fn resume(mut m: Machine) -> Result<Msg, String> {
@@ -50,7 +38,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
 
                     // 3. Listas: formas especiales o invocacion de funciones
 
-                    Form::List(list) => {
+                    Form::List(list, _list_type) => {
                         if list.is_empty() {
                             m.v.push(RVal::List(vec![]));
                             continue;
@@ -63,7 +51,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                     if list.len() < 3 {
                                         return Err("Invalid 'let' syntax: expected (let [binds...] body...)".into());
                                     }
-                                    if let Form::List(binds) = &list[1] {
+                                    if let Form::List(binds, _list_type) = &list[1] {
                                         let body = list[2..].to_vec();
                                         if binds.is_empty() {
                                             push_body(&mut m.c, &body, &env, addr);
@@ -104,7 +92,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                     if list.len() < 3 {
                                         return Err("Invalid 'fn' syntax: expected (fn [params...] body...)".into());
                                     }
-                                    if let Form::List(params_form) = &list[1] {
+                                    if let Form::List(params_form, _list_type) = &list[1] {
                                         let mut params = Vec::with_capacity(params_form.len());
                                         for p in params_form {
                                             if let Form::Symbol(param_name) = p {
@@ -277,4 +265,22 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
 /// Inyecta un valor en el stack de una máquina pausada (equivalente a send en Python).
 pub fn send(m: &mut Machine, val: RVal) {
     m.v.push(val);
+}
+
+// Funcion auxiliar para empujar secuencias de expresiones
+fn push_body(c: &mut Vec<Instr>, body: &[Form], env: &Env, addr: Addr) {
+    let n = body.len();
+    if n == 0 {
+        return ;
+    }
+
+    for (i, expr) in body.iter().enumerate().rev() {
+        let mut sub_addr = addr.clone();
+        sub_addr.push(format!("body_{}", i));
+
+        if i < n - 1 {
+            c.push(Instr::Discard);
+        }
+        c.push(Instr::Eval(expr.clone(), env.clone(), sub_addr));
+    }
 }

@@ -3,18 +3,6 @@
 version = 4
 
 [[package]]
-name = "PPL-TP-FINAL"
-version = "0.1.0"
-dependencies = [
- "approx",
- "ndarray",
- "rand 0.10.2",
- "rand_distr 0.6.0",
- "statrs",
- "term-table",
-]
-
-[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -227,6 +215,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
+]
+
+[[package]]
+name = "ppl_tp_final"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "ndarray",
+ "rand 0.10.2",
+ "rand_distr 0.6.0",
+ "statrs",
+ "term-table",
 ]
 
 [[package]]

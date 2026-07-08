@@ -1,4 +1,9 @@
-/* Funciones primitivas determinísticas */
+/*
+
+Módulo para la implementacion de funciones deterministas y distribuciones del lenguaje que viven en el entorno global
+de las máquinas de ejecución en forma de HashMap que vincula el simbolo con el procedimiento correspondiete.
+
+*/
 
 use std::{collections::HashMap};
 use ndarray::{Array2};
@@ -33,18 +38,127 @@ impl std::fmt::Display for HashKey {
         }
     }
 }
- 
-
-
 
 // Tipo de funcion primitiva determinística
-
 pub type PrimFn = Box<dyn Fn(&[RVal]) -> Result<RVal, String> + Send + Sync>;
 
+// Tabla de primitivas determinísticas equivalente a la tabla de primitivas de Python. Se usa para construir el entorno inicial.
+
+pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
+    let mut m: HashMap<&'static str, PrimFn> = HashMap::new();
+ 
+    // aritmética
+    m.insert("+",    Box::new(prim_add));
+    m.insert("-",    Box::new(prim_sub));
+    m.insert("*",    Box::new(prim_mul));
+    m.insert("/",    Box::new(prim_div));
+    m.insert("sqrt", Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.sqrt()))));
+    m.insert("exp",  Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.exp()))));
+    m.insert("log",  Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.ln()))));
+    m.insert("pow",  Box::new(|a| Ok(smart_num(to_f64(&a[0])?.powf(to_f64(&a[1])?)))));
+    m.insert("abs",  Box::new(|a| Ok(smart_num(to_f64(&a[0])?.abs()))));
+    m.insert("floor",Box::new(|a| Ok(RVal::Int(to_f64(&a[0])?.floor() as i64))));
+    m.insert("ceil", Box::new(|a| Ok(RVal::Int(to_f64(&a[0])?.ceil() as i64))));
+    m.insert("tanh", Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.tanh()))));
+    m.insert("max",  Box::new(|a| {
+        let v: Result<Vec<f64>, _> = a.iter().map(to_f64).collect();
+        Ok(smart_num(v?.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
+    }));
+    m.insert("min",  Box::new(|a| {
+        let v: Result<Vec<f64>, _> = a.iter().map(to_f64).collect();
+        Ok(smart_num(v?.iter().cloned().fold(f64::INFINITY, f64::min)))
+    }));
+    m.insert("mod", Box::new(|a| {
+        let divisor = to_f64(&a[1])?;
+        if divisor == 0.0 {
+            Err("Arithmetic error: modulo by zero".into())
+        } else {
+            Ok(smart_num(to_f64(&a[0])? % divisor))
+        }
+    })); 
+    // comparación y lógica
+    m.insert("=",    Box::new(prim_eq));
+    m.insert("==",   Box::new(prim_eq));
+    m.insert("!=",   Box::new(|a| Ok(RVal::Bool(a[0] != a[1]))));
+    m.insert("<",    Box::new(prim_lt));
+    m.insert(">",    Box::new(prim_gt));
+    m.insert("<=",   Box::new(prim_lte));
+    m.insert(">=",   Box::new(prim_gte));
+    m.insert("and",  Box::new(prim_and));
+    m.insert("or",   Box::new(prim_or));
+    m.insert("not",  Box::new(prim_not));
+ 
+    // estructuras de datos
+    m.insert("vector",   Box::new(prim_vector));
+    m.insert("list",     Box::new(prim_vector)); // alias
+    m.insert("hash-map", Box::new(prim_hash_map));
+    m.insert("get",      Box::new(prim_get));
+    m.insert("put",      Box::new(prim_put));
+    m.insert("assoc",    Box::new(prim_put));    // alias
+    m.insert("first",    Box::new(prim_first));
+    m.insert("second",   Box::new(prim_second));
+    m.insert("last",     Box::new(prim_last));
+    m.insert("rest",     Box::new(prim_rest));
+    m.insert("nth",      Box::new(prim_nth));
+    m.insert("conj",     Box::new(prim_conj));
+    m.insert("cons",     Box::new(prim_cons));
+    m.insert("append",   Box::new(prim_append));
+    m.insert("concat",   Box::new(prim_concat));
+    m.insert("count",    Box::new(prim_count));
+    m.insert("empty?",   Box::new(prim_empty));
+    m.insert("peek",     Box::new(prim_peek));
+    m.insert("range",    Box::new(prim_range));
+    m.insert("vector?",  Box::new(prim_is_vector));
+    m.insert("map?",     Box::new(prim_is_map));
+    m.insert("number?",  Box::new(prim_is_number));
+ 
+    // matrices
+    m.insert("mat-mul",       Box::new(prim_mat_mul));
+    m.insert("mat-add",       Box::new(prim_mat_add));
+    m.insert("mat-transpose", Box::new(prim_mat_transpose));
+    m.insert("mat-tanh",      Box::new(prim_mat_tanh));
+    m.insert("mat-relu",      Box::new(prim_mat_relu));
+    m.insert("mat-repmat",    Box::new(prim_mat_repmat));
+
+    //  Constructores de distribuciones ( Equivalente a S.update(DISTRIBUTIONS) de Python)
+    // Cada nombre de distribucion toma sus argumentos y devuelve un RVal::Dist con la distribucion correspondiente
+    // Notar que hay algunas distribuciones que tiene aliases, como por ejemplo bernoulli con flip.
+        for name in &[
+        "normal", "log-normal", "beta", "gamma", "exponential",
+        "uniform-continuous", "uniform", "poisson", "bernoulli", "flip",
+        "discrete", "categorical", "uniform-discrete", "dirichlet",
+    ] {
+        let name_owned = *name;
+        m.insert(name_owned, Box::new(move |args: &[RVal]| {
+    // Si la distribución es "discrete" o "dirichlet", extrae los datos de la lista
+    let dist = if name_owned == "discrete" || name_owned == "categorical" || name_owned == "dirichlet" {
+        // Extrae el vector de RVal::List y conviértelo a Vec<f64>
+        if let RVal::List(v) = &args[0] {
+            let nums: Result<Vec<f64>, _> = v.iter().map(to_f64).collect();
+            make_distribution(name_owned, &nums?)?
+        } else {
+            // Caso donde pasan los números como argumentos individuales
+            let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
+            make_distribution(name_owned, &nums?)?
+        }
+    } else {
+        // Caso normal (normal, log-normal, etc.)
+        let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
+        make_distribution(name_owned, &nums?)?
+    };
+    Ok(RVal::Dist(dist))
+}));
+    }
+    m
+}
+
+// Funcion auxiliar que sirve para detectar si es una función primitiva.
+pub fn is_primitive(name: &str) -> bool {
+    make_primitives().contains_key(name)
+}
+
 // Helpers de conversion equivalente a los de python
-
 // Bool se convierte igual que python: true -> 1, false -> 0
-
 fn to_f64(v: &RVal) -> Result<f64, String> {
     match v {
         RVal::Int(i) => Ok(*i as f64),
@@ -57,7 +171,6 @@ fn to_f64(v: &RVal) -> Result<f64, String> {
 
 
 // Convierte un RVal a u64 para operaciones con indices
-
 fn to_i64(v: &RVal) -> Result<i64, String> {
     match v {
         RVal::Int(i) => Ok(*i),
@@ -463,120 +576,4 @@ fn prim_mat_repmat(args: &[RVal]) -> Result<RVal, String> {
         }
     }
     Ok(array2_to_rval(result))
-}
-
-// Tabla de primitivas determinísticas equivalente a la tabla de primitivas de Python. Se usa para construir el entorno inicial.
-
-pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
-    let mut m: HashMap<&'static str, PrimFn> = HashMap::new();
- 
-    // aritmética
-    m.insert("+",    Box::new(prim_add));
-    m.insert("-",    Box::new(prim_sub));
-    m.insert("*",    Box::new(prim_mul));
-    m.insert("/",    Box::new(prim_div));
-    m.insert("sqrt", Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.sqrt()))));
-    m.insert("exp",  Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.exp()))));
-    m.insert("log",  Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.ln()))));
-    m.insert("pow",  Box::new(|a| Ok(smart_num(to_f64(&a[0])?.powf(to_f64(&a[1])?)))));
-    m.insert("abs",  Box::new(|a| Ok(smart_num(to_f64(&a[0])?.abs()))));
-    m.insert("floor",Box::new(|a| Ok(RVal::Int(to_f64(&a[0])?.floor() as i64))));
-    m.insert("ceil", Box::new(|a| Ok(RVal::Int(to_f64(&a[0])?.ceil() as i64))));
-    m.insert("tanh", Box::new(|a| Ok(RVal::Float(to_f64(&a[0])?.tanh()))));
-    m.insert("max",  Box::new(|a| {
-        let v: Result<Vec<f64>, _> = a.iter().map(to_f64).collect();
-        Ok(smart_num(v?.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
-    }));
-    m.insert("min",  Box::new(|a| {
-        let v: Result<Vec<f64>, _> = a.iter().map(to_f64).collect();
-        Ok(smart_num(v?.iter().cloned().fold(f64::INFINITY, f64::min)))
-    }));
-    m.insert("mod", Box::new(|a| {
-        let divisor = to_f64(&a[1])?;
-        if divisor == 0.0 {
-            Err("Arithmetic error: modulo by zero".into())
-        } else {
-            Ok(smart_num(to_f64(&a[0])? % divisor))
-        }
-    })); 
-    // comparación y lógica
-    m.insert("=",    Box::new(prim_eq));
-    m.insert("==",   Box::new(prim_eq));
-    m.insert("!=",   Box::new(|a| Ok(RVal::Bool(a[0] != a[1]))));
-    m.insert("<",    Box::new(prim_lt));
-    m.insert(">",    Box::new(prim_gt));
-    m.insert("<=",   Box::new(prim_lte));
-    m.insert(">=",   Box::new(prim_gte));
-    m.insert("and",  Box::new(prim_and));
-    m.insert("or",   Box::new(prim_or));
-    m.insert("not",  Box::new(prim_not));
- 
-    // estructuras de datos
-    m.insert("vector",   Box::new(prim_vector));
-    m.insert("list",     Box::new(prim_vector)); // alias
-    m.insert("hash-map", Box::new(prim_hash_map));
-    m.insert("get",      Box::new(prim_get));
-    m.insert("put",      Box::new(prim_put));
-    m.insert("assoc",    Box::new(prim_put));    // alias
-    m.insert("first",    Box::new(prim_first));
-    m.insert("second",   Box::new(prim_second));
-    m.insert("last",     Box::new(prim_last));
-    m.insert("rest",     Box::new(prim_rest));
-    m.insert("nth",      Box::new(prim_nth));
-    m.insert("conj",     Box::new(prim_conj));
-    m.insert("cons",     Box::new(prim_cons));
-    m.insert("append",   Box::new(prim_append));
-    m.insert("concat",   Box::new(prim_concat));
-    m.insert("count",    Box::new(prim_count));
-    m.insert("empty?",   Box::new(prim_empty));
-    m.insert("peek",     Box::new(prim_peek));
-    m.insert("range",    Box::new(prim_range));
-    m.insert("vector?",  Box::new(prim_is_vector));
-    m.insert("map?",     Box::new(prim_is_map));
-    m.insert("number?",  Box::new(prim_is_number));
- 
-    // matrices
-    m.insert("mat-mul",       Box::new(prim_mat_mul));
-    m.insert("mat-add",       Box::new(prim_mat_add));
-    m.insert("mat-transpose", Box::new(prim_mat_transpose));
-    m.insert("mat-tanh",      Box::new(prim_mat_tanh));
-    m.insert("mat-relu",      Box::new(prim_mat_relu));
-    m.insert("mat-repmat",    Box::new(prim_mat_repmat));
-
-    //  Constructores de distribuciones ( Equivalente a S.update(DISTRIBUTIONS) de Python)
-    // Cada nombre de distribucion toma sus argumentos y devuelve un RVal::Dist con la distribucion correspondiente
-
-        for name in &[
-        "normal", "log-normal", "beta", "gamma", "exponential",
-        "uniform-continuous", "uniform", "poisson", "bernoulli", "flip",
-        "discrete", "categorical", "uniform-discrete", "dirichlet",
-    ] {
-        let name_owned = *name;
-        m.insert(name_owned, Box::new(move |args: &[RVal]| {
-    // Si la distribución es "discrete" o "dirichlet", extrae los datos de la lista
-    let dist = if name_owned == "discrete" || name_owned == "categorical" || name_owned == "dirichlet" {
-        // Extrae el vector de RVal::List y conviértelo a Vec<f64>
-        if let RVal::List(v) = &args[0] {
-            let nums: Result<Vec<f64>, _> = v.iter().map(to_f64).collect();
-            make_distribution(name_owned, &nums?)?
-        } else {
-            // Caso donde pasan los números como argumentos individuales
-            let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
-            make_distribution(name_owned, &nums?)?
-        }
-    } else {
-        // Caso normal (normal, log-normal, etc.)
-        let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
-        make_distribution(name_owned, &nums?)?
-    };
-    Ok(RVal::Dist(dist))
-}));
-    }
-    m
-}
-
-// Ahora funciones auxiliares
-
-pub fn is_primitive(name: &str) -> bool {
-    make_primitives().contains_key(name)
 }

@@ -1,3 +1,11 @@
+/*
+
+Módulo que implementar la máquina de estados para la ejecucion de un programa del hoppl, esta se encarga de llevar
+registro de las pilas de ejecución, el Eviroment global donde viven las primitivas y el local.
+Ademas implementa la funcionalidad de clonar el estado de una máquina para implementar smc.
+
+*/
+
 use std::collections::HashMap;
 use crate::parser::sexpr::Form;
 use crate::parser::value::RVal;

@@ -1,15 +1,16 @@
-/* Forms are represented as plain Python data:
-  - Symbol (a str subclass)        identifiers:  x, +, sample, mat-mul
-  - int / float                    numbers
-  - bool                           true / false
-  - str                           "double-quoted strings"
-  - list                           compound forms: (op e1 e2 ...)
+/* 
 
-Square brackets are read as ordinary lists, i.e. ``[x 1]`` == ``(x 1)``;
-the FOPPL/HOPPL ``let`` desugarer interprets the binding list itself.
-Comments run from ``;`` to end of line.
+Módulo que se encarga de parsear s-expresiones y crear el AST correspondiente.
+Tambien se implementa to_string que toma el AST y hace el camino inverso.
 
 */
+
+// ListType: nos ayuda a distinguir si tenemos que poner brackest o parentesis en el to_string
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListType {
+    Paren, // ()
+    Bracket, // []
+}
 
 // Form: AST node
 #[derive(Debug, Clone, PartialEq)]
@@ -20,12 +21,93 @@ pub enum Form {
     Bool(bool),
     Str(String),
     Nil,
-    List(Vec<Form>),
+    List(Vec<Form>, ListType),
 }
 
 impl std::fmt::Display for Form {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", to_string(self))
+    }
+}
+
+/*
+
+Ahora definimos la API publica del parser del lenguaje con la funciones:
+parse / parse_one / to_string
+
+*/
+
+/*
+
+Parsea el texto fuente y devuelve una lista de todas las formas de nivel superior
+Equivalente a `parse(texto)` de python
+
+*/
+pub fn parse(text: &str) -> Result<Vec<Form>, String> {
+    let tokens = tokenize(text)?;
+    let mut forms = Vec::new();
+    let mut pos = 0;
+    while pos < tokens.len() {
+        let (form, next) = read_form(&tokens, pos)?;
+        forms.push(form);
+        pos = next;
+    }
+
+    Ok(forms)
+}
+
+/*
+
+Parsea el texto que contiene exactamente una forma de nivel superior
+Equivalente a `parse_one(text) de python`
+
+*/
+
+pub fn parse_one(text: &str) -> Result<Form, String> {
+    let forms = parse(text)?;
+    match  forms.len() {
+        1 => Ok(forms.into_iter().next().unwrap()),
+        n => Err(format!("Parsing error: Expected exactly one top-level form, but found {}. If you have multiple expressions, wrap them in a block like (let [...] ...).", n)),
+    }
+}
+
+/*
+
+Renderiza un Form de vuelta a texto fuente (aproximado).
+Equivalente a `to_string(form)` de python
+
+*/
+
+pub fn to_string(form: &Form) -> String {
+    match form {
+        Form::Bool(true) => "true".to_string(),
+        Form::Bool(false) => "false".to_string(),
+        Form::Nil => "nil".to_string(),
+        Form::Symbol(s) => s.clone(),
+        Form::Str(s) => format!("\"{s}\""),
+        Form::Int(i) => i.to_string(),
+        Form::Float(f) => {
+            // Si es un numero entero exacto, mostramos con .0 para que siga siendo float
+
+            if f.fract() == 0.0 {
+                format!("{f:.1}")
+            } else {
+                f.to_string()
+            }
+        }
+        Form::List(forms, list_type) => {
+            let inner: Vec<String> = forms.iter().map(to_string).collect();
+            let content = inner.join(" ");
+            match list_type {
+                ListType::Paren => {
+                    format!("({})",content)
+                }
+                ListType::Bracket => {
+                    format!("[{}]", content)
+                }
+            }
+            
+        }
     }
 }
 
@@ -38,6 +120,8 @@ impl std::fmt::Display for Form {
 enum Token {
     LParen,
     RParen,
+    LBracket,
+    RBracket,
     StringLit(String),
 
     Atom(String),
@@ -50,7 +134,7 @@ enum Token {
     Es equivalente al tokenize de python
 */ 
 
-pub fn tokenize(text: &str) -> Result<Vec<Token>, String> {
+fn tokenize(text: &str) -> Result<Vec<Token>, String> {
     let mut chars = text.chars().peekable();
     let mut tokens : Vec<Token> = Vec::new();
 
@@ -63,11 +147,17 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                 // iteramos hasta encontrar un salto de linea
                 while chars.next_if(|&c| c != '\n').is_some() {}
             }
-            '['  | '('  => {
+            '('  => {
                 chars.next(); tokens.push(Token::LParen);
             }
-            ']' | ')' => {
+            '[' => {
+                chars.next(); tokens.push(Token::LBracket);
+            }
+            ')' => {
                 chars.next(); tokens.push(Token::RParen);
+            }
+            ']' => {
+                chars.next(); tokens.push(Token::RBracket);
             }
 
             // String literal
@@ -113,7 +203,6 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>, String> {
 
 
 /*
-
     atom: convierte un token Atom en el Form adecuado
     es equivalente a la version de python
 */
@@ -156,11 +245,11 @@ fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
             loop {
 
                 if cur >= tokens.len() {
-                    return Err("Syntax error: Missing closing parenthesis ')' or bracket ']'. An opened list was never closed.".to_string());
+                    return Err("Syntax error: Missing closing parenthesis ')'. An opened list was never closed.".to_string());
                 }
 
                 if matches!(tokens[cur], Token::RParen) {
-                    return Ok((Form::List(forms), cur + 1));                
+                    return Ok((Form::List(forms, ListType::Paren), cur + 1));                
                 }
                 
                 let (sub, next) = read_form(tokens, cur)?;
@@ -170,8 +259,32 @@ fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
             }
         }
 
+        Token::LBracket => {
+            let mut forms : Vec<Form> = Vec::new();
+            let mut cur = pos + 1;
+            loop {
+
+                if cur >= tokens.len() {
+                    return Err("Syntax error: Missing closing bracket ']'. An opened list was never closed.".to_string());
+                }
+
+                if matches!(tokens[cur], Token::RBracket) {
+                    return Ok((Form::List(forms, ListType::Bracket), cur + 1));
+                }
+
+                let (sub, next) = read_form(tokens, cur)?;
+                forms.push(sub);
+                cur = next;
+            }
+
+        }
+
         Token::RParen => {
-            Err("Syntax error: Unexpected closing parenthesis ')' or bracket ']'. Found a closing delimiter without a matching opening delimiter.".to_string())
+            Err("Syntax error: Unexpected closing parenthesis ')'. Found a closing delimiter without a matching opening delimiter.".to_string())
+        }
+
+        Token::RBracket => {
+            Err("Syntax error: Unexpected closing bracket ']'. Found a closing delimiter without a matching opening delimiter.".to_string())
         }
 
         Token::StringLit(s) => {
@@ -184,79 +297,4 @@ fn read_form(tokens: &[Token], pos: usize) -> Result<(Form, usize), String> {
 
     }
 
-}
-
-
-/*
-
-Ahora definimos la API publica del parser del lenguaje con la funciones:
-parse / parse_one / to_string
-
-*/
-
-/*
-
-Parsea el texto fuente y devuelve una lista de todas las formas de nivel superior
-Equivalente a `parse(texto)` de python
-
-*/
-
-pub fn parse(text: &str) -> Result<Vec<Form>, String> {
-    let tokens = tokenize(text)?;
-    let mut forms = Vec::new();
-    let mut pos = 0;
-    while pos < tokens.len() {
-        let (form, next) = read_form(&tokens, pos)?;
-        forms.push(form);
-        pos = next;
-    }
-
-    Ok(forms)
-}
-
-/*
-
-Parsea el texto que contiene exactamente una forma de nivel superior
-Equivalente a `parse_one(text) de python`
-
-*/
-
-pub fn parse_one(text: &str) -> Result<Form, String> {
-    let forms = parse(text)?;
-    match  forms.len() {
-        1 => Ok(forms.into_iter().next().unwrap()),
-        n => Err(format!("Parsing error: Expected exactly one top-level form, but found {}. If you have multiple expressions, wrap them in a block like (let [...] ...).", n)),
-    }
-}
-
-
-/*
-
-Renderiza un Form de vuelta a texto fuente (aproximado).
-Equivalente a `to_string(form)` de python
-
-*/
-
-pub fn to_string(form: &Form) -> String {
-    match form {
-        Form::Bool(true) => "true".to_string(),
-        Form::Bool(false) => "false".to_string(),
-        Form::Nil => "nil".to_string(),
-        Form::Symbol(s) => s.clone(),
-        Form::Str(s) => format!("\"{s}\""),
-        Form::Int(i) => i.to_string(),
-        Form::Float(f) => {
-            // Si es un numero entero exacto, mostramos con .0 para que siga siendo float
-
-            if f.fract() == 0.0 {
-                format!("{f:.1}")
-            } else {
-                f.to_string()
-            }
-        }
-        Form::List(forms) => {
-            let inner: Vec<String> = forms.iter().map(to_string).collect();
-            format!("({})",inner.join(" "))
-        }
-    }
 }

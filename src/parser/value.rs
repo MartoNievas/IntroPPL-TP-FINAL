@@ -1,4 +1,9 @@
-/* Objeto que sirve como valor de retorno de todas la primitivas incluidas distribuciones*/
+/*
+
+Objeto que sirve como valor de retorno de todas la primitivas incluidas distribuciones.
+Se implementa ya que no tenemos el tipado dinamico de python entonces utilzamos los tipos algebraicos/enums de rust
+
+*/
 
 use std::hash::Hash;
 use std::{collections::HashMap};

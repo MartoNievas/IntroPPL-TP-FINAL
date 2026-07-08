@@ -15,7 +15,7 @@ pub fn initial_machine(program: &str) -> Result<Machine, String> {
     let mut main_form = None;
 
     for form in forms {
-        if let Form::List(list) = &form {
+        if let Form::List(list, _list_type) = &form {
             if !list.is_empty() {
                 if let Form::Symbol(sym) = &list[0] {
                     if sym == "defn" {
@@ -24,7 +24,7 @@ pub fn initial_machine(program: &str) -> Result<Machine, String> {
                             return Err("Sintaxis inválida para defn".into());
                         }
                         if let Form::Symbol(name) = &list[1] {
-                            if let Form::List(params_form) = &list[2] {
+                            if let Form::List(params_form, _list_type) = &list[2] {
                                 let mut params = Vec::new();
                                 for p in params_form {
                                     if let Form::Symbol(param_name) = p {

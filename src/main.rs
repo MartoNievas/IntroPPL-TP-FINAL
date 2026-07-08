@@ -1,3 +1,21 @@
+/*
+
+Módulo de entrada del programa, para ejecución de una demostración o ejecución de archivos de codigo del hoppl.
+Con los siguientes modos de uso:
+
+    - Modo demostracion: cargo run -> corre la demo entera | cargo run -- <num_demo> -> corre demo especifica.
+    - Ejecución de código hoppl: cargo run <archivo.hoppl> <algoritmo de inferencia>.
+
+    numero de demos = 6
+    algoritmos de inferencia:
+        - lw
+        - ssmh
+        - smc
+        - bbvi
+        - exact numeration
+
+*/
+
 mod inference;
 mod interpreter;
 mod parser;
@@ -8,12 +26,12 @@ use std::time::Instant;
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use PPL_TP_FINAL::inference::bbvi::run_bbvi;
-use PPL_TP_FINAL::inference::exact_enumeration::{enumerate_traces, posterior_table};
-use PPL_TP_FINAL::inference::lw::likelihood_weighting;
-use PPL_TP_FINAL::inference::smc::run_smc;
-use PPL_TP_FINAL::inference::ssmh::single_site_mh;
-use PPL_TP_FINAL::parser::value::RVal;
+use ppl_tp_final::inference::bbvi::run_bbvi;
+use ppl_tp_final::inference::exact_enumeration::{enumerate_traces, posterior_table};
+use ppl_tp_final::inference::lw::likelihood_weighting;
+use ppl_tp_final::inference::smc::run_smc;
+use ppl_tp_final::inference::ssmh::single_site_mh;
+use ppl_tp_final::parser::value::RVal;
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
 // ─ Colores ANSI para que la salida se lea mejor en una presentación en vivo
@@ -486,7 +504,7 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
             println!("Explorando todos los estados posibles...");
             match enumerate_traces(model, ENUM_MAX_TRACES) {
                 Ok(runs) => {
-                    let (mut pmf, log_z) = posterior_table(&runs);
+                    let (mut pmf, _log_z) = posterior_table(&runs);
 
                     pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
 

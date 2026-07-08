@@ -1,7 +1,9 @@
 /*
+
 Módulo que implementa el algoritmo de inferencia Exact Enumeration (Enumeración Exacta).
 Este algoritmo explora exhaustivamente todas las ramificaciones posibles de un programa
 probabilístico con variables discretas finitas.
+
 */
 
 use crate::interpreter::{initial_machine, resume, send, Machine, Msg};
@@ -9,8 +11,8 @@ use crate::parser::distribution::Distribution;
 use crate::parser::value::RVal;
 use std::collections::{HashMap, VecDeque};
 
-/// Función auxiliar matemática equivalente a `scipy.special.logsumexp` de Python.
-/// Calcula log(exp(a) + exp(b)) de forma numéricamente estable.
+// Función auxiliar matemática equivalente a `scipy.special.logsumexp` de Python.
+// Calcula log(exp(a) + exp(b)) de forma numéricamente estable.
 fn log_add_exp(a: f64, b: f64) -> f64 {
     let m = a.max(b);
     if m == f64::NEG_INFINITY {

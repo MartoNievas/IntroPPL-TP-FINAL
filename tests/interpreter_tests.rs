@@ -1,5 +1,17 @@
-use PPL_TP_FINAL::interpreter::{initial_machine, resume, send, Msg, Machine};
-use PPL_TP_FINAL::parser::value::RVal;
+/*
+
+Tests para la implementacion de el interperte, en espacial se testea:
+    - La interfaz de mensajes, para ver el resultado de un programa o determinar pausas por sentencias sample
+    u observe.
+    - Ejecucion de código determinista y validación de resultados.
+    - Validacion de errores en tiempo de ejecucion
+    - Transiciones de las maquinas.
+
+*/
+
+
+use ppl_tp_final::interpreter::{initial_machine, resume, send, Msg, Machine};
+use ppl_tp_final::parser::value::RVal;
 
 fn run_to_done(code: &str) -> Result<RVal, String> {
     let m = initial_machine(code)?;

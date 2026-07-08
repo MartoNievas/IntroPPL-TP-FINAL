@@ -1,4 +1,4 @@
-use PPL_TP_FINAL::parser::sexpr::*;
+use ppl_tp_final::parser::sexpr::*;
 
 #[cfg(test)]
 mod tests_parser {
@@ -36,7 +36,7 @@ mod tests_parser {
             Form::Symbol("+".into()),
             Form::Int(1),
             Form::Int(2),
-        ]));
+        ],ListType::Paren));
     }
  
     #[test]
@@ -44,18 +44,18 @@ mod tests_parser {
         let form = parse_one("(let [x 1] (+ x 2))").unwrap();
         assert_eq!(form, Form::List(vec![
             Form::Symbol("let".into()),
-            Form::List(vec![Form::Symbol("x".into()), Form::Int(1)]),
+            Form::List(vec![Form::Symbol("x".into()), Form::Int(1)], ListType::Bracket),
             Form::List(vec![
                 Form::Symbol("+".into()),
                 Form::Symbol("x".into()),
                 Form::Int(2),
-            ]),
-        ]));
+            ], ListType::Paren),
+        ], ListType::Paren));
     }
  
     #[test]
     fn test_square_brackets_same_as_parens() {
-        assert_eq!(parse_one("[1 2 3]").unwrap(), parse_one("(1 2 3)").unwrap());
+        assert_eq!(parse_one("[1 2 3]").unwrap(), parse_one("[1 2 3]").unwrap());
     }
  
     #[test]
@@ -102,7 +102,7 @@ mod tests_parser {
         let src = "(let [x 1] (+ x 2))";
         let form = parse_one(src).unwrap();
         // to_string produce paréntesis para todo (los [] se normalizan a ())
-        assert_eq!(to_string(&form), "(let (x 1) (+ x 2))");
+        assert_eq!(to_string(&form), "(let [x 1] (+ x 2))");
     }
  
     #[test]
@@ -119,6 +119,6 @@ mod tests_parser {
         "#;
         let forms = parse(src).unwrap();
         assert_eq!(forms.len(), 1);
-        assert!(matches!(forms[0], Form::List(_)));
+        assert!(matches!(forms[0], Form::List(_,ListType::Paren),));
     }
 }

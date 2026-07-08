@@ -6,6 +6,8 @@ Todas las distrbuciones soportan las operaciones:
     - sample: devuelve un valor aleatorio de la distribución
     - log-prob: devuelve el logaritmo de la probabilidad de un valor dado
 
+Algunas soportan make_guide / params / with_params / grad_log_prob para inferncia bbvi.
+
 */
 
 use core::f64;
@@ -43,6 +45,64 @@ pub enum Distribution {
     Discrete { probs: Vec<f64> },         // categorical sobre {0..K-1}, ya normalizado
     UniformDiscrete { lo: i64, hi: i64 }, // enteros en [lo, hi)
     Dirichlet { alphas: Vec<f64> },
+}
+
+// Tabla de constructores de distribuciones (Nombre primitivos visibles)
+pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, String> {
+    match name {
+        "normal" => Distribution::normal(args[0], args[1]),
+        "log-normal" => Distribution::log_normal(args[0], args[1]),
+        "uniform-continuous" | "uniform" => Distribution::uniform(args[0], args[1]),
+        "exponential" => Distribution::exponential(args[0]),
+        "beta" => Distribution::beta(args[0], args[1]),
+        "gamma" => Distribution::gamma(args[0], args[1]),
+        "poisson" => Distribution::poisson(args[0]),
+        "flip" | "bernoulli" => Distribution::bernoulli(args[0]),
+        "discrete" | "categorical" => Distribution::discrete(&args.to_vec()),
+        "uniform-discrete" => Distribution::uniform_discrete(args[0] as i64, args[1] as i64),
+        "dirichlet" => Distribution::dirichlet(&args.to_vec()),
+        _ => Err(format!("Unknown distribution family: '{}'", name)),
+    }
+}
+
+// Guide variacional optimizable con el mismo soporte que `d` (BBVI).
+pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
+    match d {
+        Distribution::Normal { mu, sigma } => Distribution::normal(*mu, *sigma),
+        Distribution::LogNormal { mu, sigma } => Distribution::log_normal(*mu, *sigma),
+        Distribution::Gamma { .. }
+        | Distribution::Exponential { .. }  => {
+            // soporte positivo ilimitado -> inicialización tipo log-normal
+            Distribution::log_normal(0.0, 1.0)
+        }
+        Distribution::Bernoulli { p } => Distribution::bernoulli(*p),
+        Distribution::Discrete { probs } => Distribution::discrete(&probs.to_vec()),
+        other => Err(format!(
+            "No optimizable guide family available for the '{}' distribution in Black Box Variational Inference (BBVI)",
+            other.name()
+        )),
+    }
+}
+
+// --- repr legible, equivalente a __repr__ del Python ----------------------
+
+impl std::fmt::Display for Distribution {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let params: Vec<String> = match self {
+            Distribution::Normal { mu, sigma } => vec![mu.to_string(), sigma.to_string()],
+            Distribution::LogNormal { mu, sigma } => vec![mu.to_string(), sigma.to_string()],
+            Distribution::Uniform { a, b } => vec![a.to_string(), b.to_string()],
+            Distribution::Exponential { rate } => vec![rate.to_string()],
+            Distribution::Beta { alpha, beta } => vec![alpha.to_string(), beta.to_string()],
+            Distribution::Gamma { shape, rate } => vec![shape.to_string(), rate.to_string()],
+            Distribution::Poisson { lam } => vec![lam.to_string()],
+            Distribution::Bernoulli { p } => vec![p.to_string()],
+            Distribution::Discrete { probs } => vec![format!("{probs:?}")],
+            Distribution::UniformDiscrete { lo, hi } => vec![lo.to_string(), hi.to_string()],
+            Distribution::Dirichlet { alphas } => vec![format!("{alphas:?}")],
+        };
+        write!(f, "({} {})", self.name(), params.join(" "))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -369,7 +429,7 @@ impl Distribution {
         }
     }
 
-    /// Nueva instancia a partir de un List de parámetros no restringidos.
+    // Nueva instancia a partir de un List de parámetros no restringidos.
     pub fn with_params(&self, theta: &[f64]) -> Option<Distribution> {
         match self {
             Distribution::Normal { .. } => Some(Distribution::Normal {
@@ -390,7 +450,7 @@ impl Distribution {
         }
     }
 
-    /// Gradiente de log_prob(x) respecto de los parámetros no restringidos.
+    // Gradiente de log_prob(x) respecto de los parámetros no restringidos.
     pub fn grad_log_prob(&self, x: &RVal) -> Option<Vec<f64>> {
         match (self, x) {
             (Distribution::Normal { mu, sigma }, RVal::Float(x)) => {
@@ -421,46 +481,11 @@ impl Distribution {
     }
 }
 
-fn sigmoid(x: f64) -> f64 {
-    1.0 / (1.0 + (-x).exp())
-}
-
-fn softmax(v: &[f64]) -> Vec<f64> {
-    let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let exps: Vec<f64> = v.iter().map(|x| (x - m).exp()).collect();
-    let sum: f64 = exps.iter().sum();
-
-    if sum == 0.0 { 
-        vec![1.0 / v.len() as f64; v.len()] 
-    } else {
-        exps.into_iter().map(|e| e / sum).collect()
-    }
-}
-
-// Tabla de constructores de distribuciones (Nombre primitivos visibles)
-
-pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, String> {
-    match name {
-        "normal" => Distribution::normal(args[0], args[1]),
-        "log-normal" => Distribution::log_normal(args[0], args[1]),
-        "uniform-continuous" | "uniform" => Distribution::uniform(args[0], args[1]),
-        "exponential" => Distribution::exponential(args[0]),
-        "beta" => Distribution::beta(args[0], args[1]),
-        "gamma" => Distribution::gamma(args[0], args[1]),
-        "poisson" => Distribution::poisson(args[0]),
-        "flip" | "bernoulli" => Distribution::bernoulli(args[0]),
-        "discrete" | "categorical" => Distribution::discrete(&args.to_vec()),
-        "uniform-discrete" => Distribution::uniform_discrete(args[0] as i64, args[1] as i64),
-        "dirichlet" => Distribution::dirichlet(&args.to_vec()),
-        _ => Err(format!("Unknown distribution family: '{}'", name)),
-    }
-}
-
-// Funcion auxiliar para soporte finito en Exact Enumeration, la implemento en el modulo
-// de distribuciones porque es donde mas sentido tiene
-
 /**
- 
+    
+    Funcion auxiliar para soporte finito en Exact Enumeration, la implemento en el modulo
+    de distribuciones porque es donde mas sentido tiene
+
     Una distribucion debe cumplir con 2 propiedades para que tenga soporte finito:
         1. Tiene que ser discreta, es decir que sus valores van a "saltos" como los numeros enteros
         2. Y que tenga una cantidad de valores finitos posibles.
@@ -515,45 +540,18 @@ pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, Strin
     }
  }
 
-
-// Guide variacional optimizable con el mismo soporte que `d` (BBVI).
-pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
-    match d {
-        Distribution::Normal { mu, sigma } => Distribution::normal(*mu, *sigma),
-        Distribution::LogNormal { mu, sigma } => Distribution::log_normal(*mu, *sigma),
-        Distribution::Gamma { .. }
-        | Distribution::Exponential { .. }  => {
-            // soporte positivo ilimitado -> inicialización tipo log-normal
-            Distribution::log_normal(0.0, 1.0)
-        }
-        Distribution::Bernoulli { p } => Distribution::bernoulli(*p),
-        Distribution::Discrete { probs } => Distribution::discrete(&probs.to_vec()),
-        other => Err(format!(
-            "No optimizable guide family available for the '{}' distribution in Black Box Variational Inference (BBVI)",
-            other.name()
-        )),
-    }
+fn sigmoid(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
 }
 
-// --- repr legible, equivalente a __repr__ del Python ----------------------
+fn softmax(v: &[f64]) -> Vec<f64> {
+    let m = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<f64> = v.iter().map(|x| (x - m).exp()).collect();
+    let sum: f64 = exps.iter().sum();
 
-impl std::fmt::Display for Distribution {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let params: Vec<String> = match self {
-            Distribution::Normal { mu, sigma } => vec![mu.to_string(), sigma.to_string()],
-            Distribution::LogNormal { mu, sigma } => vec![mu.to_string(), sigma.to_string()],
-            Distribution::Uniform { a, b } => vec![a.to_string(), b.to_string()],
-            Distribution::Exponential { rate } => vec![rate.to_string()],
-            Distribution::Beta { alpha, beta } => vec![alpha.to_string(), beta.to_string()],
-            Distribution::Gamma { shape, rate } => vec![shape.to_string(), rate.to_string()],
-            Distribution::Poisson { lam } => vec![lam.to_string()],
-            Distribution::Bernoulli { p } => vec![p.to_string()],
-            Distribution::Discrete { probs } => vec![format!("{probs:?}")],
-            Distribution::UniformDiscrete { lo, hi } => vec![lo.to_string(), hi.to_string()],
-            Distribution::Dirichlet { alphas } => vec![format!("{alphas:?}")],
-        };
-        write!(f, "({} {})", self.name(), params.join(" "))
+    if sum == 0.0 { 
+        vec![1.0 / v.len() as f64; v.len()] 
+    } else {
+        exps.into_iter().map(|e| e / sum).collect()
     }
 }
-
-

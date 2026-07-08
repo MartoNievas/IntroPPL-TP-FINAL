@@ -1,8 +1,14 @@
-use PPL_TP_FINAL::inference::lw::likelihood_weighting;
-use PPL_TP_FINAL::inference::smc::run_smc;
-use PPL_TP_FINAL::inference::ssmh::single_site_mh;
-use PPL_TP_FINAL::inference::exact_enumeration::*;
-use PPL_TP_FINAL::parser::value::RVal;
+/*
+
+Tests para la implentación de los algoritmos de inferencia lw, smc, ssmh, bbvi y exact enumeration.
+
+*/
+
+use ppl_tp_final::inference::lw::likelihood_weighting;
+use ppl_tp_final::inference::smc::run_smc;
+use ppl_tp_final::inference::ssmh::single_site_mh;
+use ppl_tp_final::inference::bbvi::run_bbvi;
+use ppl_tp_final::inference::exact_enumeration::*;
 
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -114,8 +120,6 @@ mod inference_algorithms_tests {
     #[test]
 #[test]
 fn test_bbvi_convergence_coin_flip() {
-    use PPL_TP_FINAL::inference::bbvi::run_bbvi;
-    use rand::prelude::*;
 
     // Muestreamos 'x' de una Normal (rango ilimitado) 
     // y calculamos 'p' usando la fórmula de la sigmoide: p = 1 / (1 + exp(-x))

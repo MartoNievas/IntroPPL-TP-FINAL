@@ -1,4 +1,8 @@
-/*Libreria para el uso de las estructuras*/
+/*
+
+Se define la libreria para utilizar las estructuras es todo el proyecto.
+
+*/
 pub mod parser; 
 pub mod interpreter;
 pub mod inference;
