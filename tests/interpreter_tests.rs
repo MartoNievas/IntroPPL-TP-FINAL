@@ -10,7 +10,7 @@ Tests para la implementacion de el interperte, en espacial se testea:
 */
 
 
-use ppl_tp_final::interpreter::{initial_machine, resume, send, Msg, Machine};
+use ppl_tp_final::interpreter::{initial_machine, resume, send, Msg};
 use ppl_tp_final::parser::value::RVal;
 
 fn run_to_done(code: &str) -> Result<RVal, String> {

@@ -22,79 +22,166 @@ De acuerdo con la consigna, el proyecto cumple con dos núcleos de exigencia pri
 
 *Nota sobre la tecnología:* La consigna permitía la libre elección del lenguaje de programación para el desarrollo del intérprete. Los detalles técnicos, las justificaciones arquitectónicas y los beneficios de la tecnología seleccionada para este proyecto se detallan en la siguiente sección.
 
-## 🦀 Lenguaje de Implementación: ¿Por qué Rust?
+# Ejecutar Proyecto
 
-Aunque la consigna del proyecto permitía utilizar lenguajes interpretados de alto nivel (como Python), se tomó la decisión arquitectónica de desarrollar el proyecto —incluyendo el *lexer*, el *parser* para la sintaxis del **HOPPL** (*Higher-Order Probabilistic Programming Language*) y el motor de evaluación— completamente desde cero en **Rust**. 
+En esta sección vamos a detallar todas las dependencias del proyecto y como correr el mismo.
 
-Esta elección se fundamenta en cuatro pilares críticos que aportan ventajas significativas al diseño de lenguajes y a la computación probabilística:
+## Dependencias
 
-### 1. Pattern Matching y Tipos Algebraicos (ADTs) para el AST
-El diseño de un intérprete requiere manipular continuamente árboles de sintaxis abstracta (AST) y evaluar expresiones recursivas. 
-* Los **Enums potentes (tipos algebraicos)** de Rust permiten modelar las expresiones del lenguaje probabilístico (operaciones, closures, llamadas `sample`, `observe`, etc.) de forma natural y autoexplicativa.
-* El **Pattern Matching exhaustivo** (`match`) garantiza que el evaluador maneje absolutamente todos los casos posibles y ramificaciones del AST. Si se agrega un nuevo nodo o primitiva al lenguaje, el compilador nos alertará exactamente de qué partes del evaluador necesitan ser actualizadas.
+Como se mencionó anteriormente vamos a especificar las dependencias para utilizar el lenguaje, y aquí radica la magia de Rust y más específicamente en su Build System and Package Manager **Cargo**, el cual se instala de la siguiente manera:
 
-### 2. Seguridad de Tipos y Prevención de Errores en Tiempo de Compilación
-A diferencia de lenguajes interpretados o con tipado dinámico donde los errores de lógica o de memoria explotan en tiempo de ejecución (a mitad de una simulación larga), el estricto sistema de tipos y el *Borrow Checker* de Rust actúan como una primera línea de defensa:
-* **Cero excepciones en tiempo de ejecución por referencias nulas:** El uso de tipos monádicos como `Option<T>` y `Result<T, E>` hace que el manejo de errores sintácticos en el *Parser* y errores semánticos en el *Evaluador* sea explícito y predecible.
-* **Seguridad de memoria sin Garbage Collector (GC):** Se evitan fugas de memoria y errores de segmentación sin pagar el costo de las pausas en tiempo de ejecución de un recolector de basura.
+### Instalación de Rustup
 
-### 3. Rendimiento y Eficiencia en Algoritmos de Inferencia
-Los algoritmos implementados en este proyecto (*Sequential Monte Carlo*, *Metropolis-Hastings* y *Likelihood Weighting*) son de naturaleza altamente intensiva a nivel computacional:
-* Por ejemplo, en **Sequential Monte Carlo (SMC)** es necesario mantener, evaluar y clonar miles de "partículas" (trazas de ejecución de los grafos probabilísticos) en paralelo y realizar re-muestreos (*resampling*) constantes.
-* Al ser un lenguaje compilado a código de máquina nativo con abstracciones de costo cero (*zero-cost abstractions*), Rust ejecuta simulaciones de miles de pasos de MCMC o partículas SMC en una fracción del tiempo que le tomaría a lenguajes interpretados como Python, logrando una eficiencia del orden de C o C++.
+**Rustup** es el instalador y gestor de toolchains oficial de Rust. Se encarga de instalar `rustc` (el compilador), `cargo` (el build system y package manager) y mantenerlos actualizados.
 
-### 4. Ergonomía para la Estructura de Traza (Trace Tracking)
-Para implementar algoritmos como **Single-Site Metropolis-Hastings**, es indispensable mantener una "traza" (*Trace*) que asocie de manera unívoca cada llamada condicional `sample` a una dirección de ejecución (*Address*). La propiedad de pertenencia (*Ownership*) y el clonado explícito de datos en Rust facilitan la creación de un sistema de seguimiento de direcciones limpio y sin efectos secundarios inesperados al modificar el estado de las variables aleatorias.
+#### macOS / Linux
 
-## Aclaraciones Técnicas: CPS Funcional Puro vs. Máquina CEK
+Abrí una terminal y corré:
 
-Durante las iteraciones de diseño de este proyecto, y contemplando una sugerencia del profesor, se evaluó fuertemente la posibilidad de implementar el evaluador de expresiones utilizando **Continuation-Passing Style (CPS) funcional puro**. En la literatura clásica de Lisp, esto se logra pasando funciones de orden superior (*closures*) como continuaciones para pausar y reanudar el flujo. 
-
-Sin embargo, se tomó la decisión arquitectónica final de prescindir del CPS puro y utilizar en su lugar una **Máquina CEK (Control, Environment, Continuation)**, la cual es esencialmente la "defuncionalización" matemática del CPS. Esta decisión resuelve dos problemas críticos que presenta Rust:
-
-1. **La barrera de la clonación (Función `fork` para SMC y MCMC):** Este es el factor decisivo. Algoritmos como Sequential Monte Carlo requieren pausar la ejecución en cada instrucción `observe`, **clonar** el estado de la máquina en múltiples partículas, y reanudar de forma paralela. En Rust, es notoriamente complejo y limitante clonar un *closure* arbitrario oculto detrás de *Traits* dinámicos (ej. `Box<dyn Fn>`), ya que el compilador desconoce el tamaño y el contenido del entorno capturado en tiempo de ejecución. Al usar una Máquina CEK, la "continuación" pasa de ser una función opaca a una simple estructura de datos concreta (un vector de enums `Vec<Instr>`), haciendo que toda la máquina sea trivial y rápidamente clonable mediante `#[derive(Clone)]`.
-
-2. **Tipos Opacos y TCO (Tail Call Optimization):** Implementar CPS puro requiere construir tipos de retorno recursivos y encadenar *closures*. En Rust, lidiar con los tiempos de vida (*lifetimes*) de referencias dentro de múltiples *closures* anidados entorpece enormemente la legibilidad y mantenibilidad del evaluador. Además, al carecer Rust de optimización de llamadas de cola (TCO) garantizada, un CPS funcional puro para programas con recursión probabilística profunda terminaría provocando irremediablemente un *Stack Overflow*. La pila explícita de la máquina CEK maneja iterativamente el flujo en el *Heap*, evadiendo este problema por completo.
-
-# Estructura del Proyecto
-
-El código fuente está organizado de forma modular siguiendo las convenciones e idiomáticas de **Rust**, separando claramente las etapas de análisis sintáctico (frontend), evaluación y ejecución (backend), los motores de inferencia matemática y la batería de pruebas:
-
-```plaintext
-TP-FINAL-PPL
-|-- Cargo.lock
-|-- Cargo.toml               -> Configuración y dependencias en Rust
-|-- LICENSE                  -> Licencia del proyecto
-|-- README.md                -> Documentación principal del proyecto
-|-- src/
-|   |-- main.rs              -> Punto de entrada y ejecutable de demostración
-|   |-- lib.rs               -> Raíz de la librería que expone los módulos
-|   |
-|   |-- parser/              -> Módulo de análisis sintáctico y AST
-|   |   |-- mod.rs           -> Exportaciones del módulo de parsing
-|   |   |-- sexpr.rs         -> Analizador de S-Expressions y generación del AST (sintaxis Lisp/Clojure)
-|   |   |-- value.rs         -> Definición de RVal que uso como valor de retorno
-|   |   |-- primitives.rs    -> Operaciones y funciones primitivas nativas
-|   |   +-- distribution.rs  -> Abstracciones y matemática de distribuciones
-|   |
-|   |-- interpreter/         -> Motor de evaluación y tiempo de ejecución
-|   |   |-- mod.rs           -> Exportaciones del evaluador
-|   |   |-- machine.rs       -> Máquina de evaluación para entornos y Closures
-|   |   +-- runtime.rs       -> Intérprete, dirección (Addresses) e interfaz de mensajes para el motor de inferencia.
-|   |
-|   +-- inference/           -> Motores de inferencia probabilística
-|       |-- mod.rs           -> Exportaciones de algoritmos
-|       |-- lw.rs            -> Algoritmo: Likelihood Weighting
-|       |-- smc.rs           -> Algoritmo: Sequential Monte Carlo (SMC)
-|       +-- ssmh.rs          -> Algoritmo: Single-Site Metropolis-Hastings
-|
-+-- tests/                   -> Pruebas unitarias y de integración
-    |-- parser_tests.rs      -> Pruebas de validación sintáctica y AST
-    |-- interpreter_tests.rs -> Pruebas de evaluación, recursión y Closures
-    |-- distributions_tests.rs -> Pruebas de densidad y distribuciones
-    |-- primitives_tests.rs  -> Pruebas para operaciones primitivas incluido distribuciones y operaciones sobre tipos de datos
-    +-- inference_tests.rs   -> Pruebas de convergencia de los algoritmos
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+Esto descarga el script oficial de rustup y lo ejecuta. Te va a preguntar qué tipo de instalación querés (la opción `1) Proceed with installation (default)` alcanza para la mayoría de los casos).
+
+Una vez terminado, cargá las variables de entorno en la sesión actual (o simplemente abrí una terminal nueva):
+
+```bash
+source "$HOME/.cargo/env"
+```
+
+En macOS, si no tenés instaladas las herramientas de línea de comandos de Xcode (necesarias para compilar), rustup te va a pedir que las instales. Podés adelantarte corriendo:
+
+```bash
+xcode-select --install
+```
+
+#### Windows
+
+En Windows hay dos caminos:
+
+1. **Instalador gráfico (recomendado):** descargar y ejecutar [`rustup-init.exe`](https://rustup.rs) desde el sitio oficial. El instalador va a detectar automáticamente si te falta el **Visual Studio C++ Build Tools** (requerido para linkear en Windows) y te va a ofrecer instalarlo.
+
+2. **Con winget (PowerShell):**
+
+   ```powershell
+   winget install Rustlang.Rustup
+   ```
+
+En ambos casos, después de instalar hay que **reiniciar la terminal** para que las variables de entorno (`PATH`) se actualicen correctamente.
+
+#### Verificar la instalación
+
+En cualquiera de los tres sistemas, una vez instalado, verificá con:
+
+```bash
+rustc --version
+cargo --version
+```
+
+Deberían aparecer las versiones instaladas (por ejemplo `rustc 1.8x.x` y `cargo 1.8x.x`). Si aparece "command not found", probablemente falte reiniciar la terminal o recargar el `PATH`.
+
+## Compilar el proyecto
+
+Una vez clonado el repositorio, parate en la carpeta raíz del proyecto (donde está el `Cargo.toml`) y corré:
+
+```bash
+cargo build --release
+```
+
+Esto descarga automáticamente todas las dependencias (crates) declaradas en `Cargo.toml` y compila el proyecto en modo optimizado. La primera compilación puede tardar unos minutos porque baja e instala todas las dependencias; las siguientes son incrementales y mucho más rápidas.
+
+> Si solo querés compilar rápido para desarrollo (sin optimizaciones), podés usar `cargo build` a secas.
+
+## Correr el proyecto
+
+El binario soporta cuatro modos de uso distintos:
+
+### 1. Correr todas las demos hardcodeadas
+
+```bash
+cargo run
+```
+
+Ejecuta, en orden, las 6 demostraciones incluidas en el proyecto (Likelihood Weighting, SMC, seguridad estática de SMC, Single-Site MH, BBVI y Exact Enumeration), pausando entre cada una para que puedas leer los resultados antes de continuar.
+
+### 2. Correr una demo específica
+
+```bash
+cargo run -- <numero>
+```
+
+Donde `<numero>` es un valor entre `1` y `6`. Por ejemplo:
+
+```bash
+cargo run -- 4
+```
+
+corre únicamente la demo de Single-Site Metropolis-Hastings, sin pausas ni el resto de las demos.
+
+### 3. Correr un modelo `.hoppl` propio
+
+```bash
+cargo run -- <archivo.hoppl> <algoritmo>
+```
+
+Donde:
+
+- `<archivo.hoppl>` es la ruta a un archivo de texto con un programa escrito en HOPPL.
+- `<algoritmo>` es el motor de inferencia a usar. Los valores soportados son:
+
+| Algoritmo | Valor a pasar |
+|---|---|
+| Likelihood Weighting | `lw` |
+| Single-Site Metropolis-Hastings | `ssmh` |
+| Sequential Monte Carlo | `smc` |
+| Black-Box Variational Inference | `bbvi` |
+| Exact Enumeration | `exact-enumeration` (alias: `enum`, `exact`) |
+
+Por ejemplo:
+
+```bash
+cargo run -- modelos/mi_modelo.hoppl smc
+```
+
+### 4. Correr un modelo `.hoppl` propio determinisitico
+
+```bash
+cargo run -- <archivo.hoppl>
+```
+
+Donde:
+
+- `<archivo.hoppl>` es la ruta a un archivo de texto con un programa determinisitico escrito en HOPPL.
+
+## Correr los tests
+
+El proyecto incluye tests automatizados para validar el parser, el intérprete, los distintos algoritmos de inferencia y tambien primitivas y distribuciones soportadas. Para correr **toda** la suite de tests:
+
+```bash
+cargo test
+```
+
+Si querés correr únicamente los tests de un módulo o archivo puntual (por ejemplo, solo los del parser o solo los de un algoritmo de inferencia en particular), pasale un filtro por nombre:
+
+```bash
+cargo test <nombre_del_test_o_modulo>
+```
+
+Cargo va a correr solo aquellos tests cuyo nombre (o el path del módulo que los contiene) coincida con el filtro dado. Por ejemplo:
+
+```bash
+cargo test tests_parser
+```
+
+correría solo los tests relacionados a validacion de AST construido y tokenización.
+
+> Tip: agregá el flag `-- --nocapture` si querés ver los `println!` que hagan los tests mientras corren (por defecto Cargo oculta la salida estándar de los tests que pasan):
+>
+> ```bash
+> cargo test -- --nocapture
+> ```
+
 # Acerca del Lenguaje
 
 Este lenguaje, fuertemente inspirado en Lisp y Clojure, utiliza una sintaxis basada en **Expresiones S (S-expressions)**, donde el código y los datos comparten la misma estructura de listas anidadas. Todo el código es evaluado por la máquina virtual CEK, que interpreta estas listas para controlar el flujo, manejar variables y disparar efectos probabilísticos.
@@ -209,6 +296,188 @@ El lenguaje soporta la instanciación de variables aleatorias a través de diver
 * `(discrete [probs...])` / `(categorical [probs...])`: Distribución Categórica dada una lista de probabilidades (se normalizan automáticamente).
 
 * `(uniform-discrete lo hi)`: Distribución Uniforme discreta en el intervalo $[lo, hi)$.
+
+# Tutorial: Escribiendo tu primer programa en HOPPL
+
+Esta sección es una guía práctica y progresiva para aprender a escribir programas en HOPPL, partiendo de expresiones simples hasta llegar a un modelo probabilístico completo. Todos los ejemplos se pueden probar directamente pegándolos en un archivo `.hoppl` y corriendo `cargo run -- archivo.hoppl <algoritmo>` (ver la sección [Ejecutar Proyecto](#ejecutar-proyecto)).
+
+### 1. Expresiones y aritmética
+
+Como en todo Lisp, el primer elemento de una lista es el operador y el resto son sus argumentos:
+
+```clojure
+(+ 1 2)              ; -> 3
+(* 3 (+ 1 1))         ; -> 6
+(> 5 3)               ; -> true
+```
+
+### 2. Variables con `let`
+
+`let` enlaza una o más variables locales, en orden, y evalúa un cuerpo final usándolas:
+
+```clojure
+(let [x 5
+      y (+ x 2)]
+  (* x y))            ; -> 35
+```
+
+Notá que `y` puede usar `x` porque `let` enlaza sus variables de forma secuencial (como un `let*` de Lisp), no en simultáneo.
+
+### 3. Condicionales con `if`
+
+```clojure
+(let [x 10]
+  (if (> x 5)
+      "grande"
+      "chico"))       ; -> "grande"
+```
+
+### 4. Funciones con `fn`
+
+`fn` define una función anónima (closure). Podés asignarla a un nombre con `let` para reutilizarla:
+
+```clojure
+(let [cuadrado (fn [x] (* x x))]
+  (cuadrado 4))       ; -> 16
+```
+
+El lenguaje también soporta recursión, pero con un matiz importante: `let` no es un `letrec`. Cuando `(fn [...] cuerpo)` se evalúa, la closure captura el entorno tal como está en ese instante — y ese instante es *antes* de que `let` termine de enlazar el nombre de la función. Por eso, una función no puede llamarse a sí misma simplemente por su propio nombre dentro de un `let`.
+
+La forma estándar de lograr recursión en este caso es el truco clásico de **auto-aplicación**: la función recibe una copia de sí misma como argumento explícito, y se la vuelve a pasar en cada llamada recursiva. Con eso podemos escribir, por ejemplo, una distribución geométrica implementada recursivamente:
+
+```clojure
+; Cuenta cuántos "fracasos" (bernoulli p = false) ocurren antes del primer "éxito".
+; Esto es exactamente la definición de una distribución Geométrica(p).
+(let [geometrica
+        (fn [self]
+          (fn [p]
+            (if (sample (bernoulli p))
+                0
+                (+ 1 ((self self) p)))))]
+  ((geometrica geometrica) 0.3))
+```
+
+`(geometrica geometrica)` se aplica a sí misma para producir la función real de un argumento (`fn [p] ...`), ya con `self` correctamente enlazado en su entorno porque, a diferencia del nombre en `let`, `self` es un parámetro de función y sí se resuelve normalmente en el momento de la llamada. Dentro del cuerpo, `((self self) p)` repite el mismo truco para la llamada recursiva.
+
+Esto también muestra algo importante del lenguaje: como `sample` puede devolver un valor distinto cada vez que se evalúa, la cantidad de veces que `geometrica` se llama a sí misma varía en cada ejecución — es un ejemplo simple de grafo de computación de **longitud variable**, uno de los requisitos centrales de un HOPPL.
+
+### 5. Efectos probabilísticos: `sample` y `observe`
+
+* `(sample dist)` extrae un valor aleatorio de una distribución.
+* `(observe dist valor)` le dice al motor de inferencia "asumí que `dist` generó exactamente `valor`", condicionando el modelo.
+
+```clojure
+; mu es una variable aleatoria latente con prior Normal(0, 1)
+(let [mu (sample (normal 0 1))]
+  ; Observamos que, bajo Normal(mu, 1), el valor generado fue 3.0
+  (observe (normal mu 1) 3.0)
+  mu)
+```
+
+Este programa por sí solo no "hace" nada determinístico: define un modelo probabilístico. Necesita un motor de inferencia (`lw`, `ssmh`, `smc`, `bbvi` o `exact-enumeration`) para aproximar la distribución a posteriori de `mu` dado que observamos 3.0.
+
+### 6. Un modelo completo: moneda sesgada (Beta-Bernoulli)
+
+Juntando todo lo anterior, así se ve un modelo bayesiano clásico completo: queremos inferir el sesgo `p` de una moneda a partir de haber observado 3 caras y 1 cruz.
+
+```clojure
+; Prior: p ~ Beta(2, 2)
+; Likelihood: observamos 3 caras (true) y 1 cruz (false)
+(let [p (sample (beta 2.0 2.0))]
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) false)
+    p)
+```
+
+Guardá esto en `moneda.hoppl` y corré, por ejemplo:
+
+```bash
+cargo run -- moneda.hoppl smc
+```
+
+para aproximar la distribución a posteriori de `p` usando Sequential Monte Carlo. Podés cambiar `smc` por `lw`, `ssmh` o `bbvi` para comparar cómo cada motor de inferencia resuelve el mismo modelo.
+
+### 7. Próximos pasos
+
+A partir de acá, las secciones **Acerca del Lenguaje** (arriba) y **Extras** (más abajo) documentan todas las primitivas, distribuciones y garantías de seguridad estática (por ejemplo, qué patrones evita el analizador de SMC) que vas a necesitar para escribir modelos más complejos.
+
+# Estructura del Proyecto
+
+El código fuente está organizado de forma modular siguiendo las convenciones e idiomáticas de **Rust**, separando claramente las etapas de análisis sintáctico (frontend), evaluación y ejecución (backend), los motores de inferencia matemática y la batería de pruebas:
+
+```plaintext
+TP-FINAL-PPL
+|-- Cargo.lock
+|-- Cargo.toml                    -> Configuración y dependencias en Rust
+|-- LICENSE                       -> Licencia del proyecto
+|-- README.md                     -> Documentación principal del proyecto
+|-- src/
+|   |-- main.rs                   -> Punto de entrada y ejecutable de demostración
+|   |-- lib.rs                    -> Raíz de la librería que expone los módulos
+|   |
+|   |-- parser/                   -> Módulo de análisis sintáctico y AST
+|   |   |-- mod.rs                -> Exportaciones del módulo de parsing
+|   |   |-- sexpr.rs              -> Analizador de S-Expressions y generación del AST (sintaxis Lisp/Clojure)
+|   |   |-- value.rs              -> Definición de RVal que uso como valor de retorno
+|   |   |-- primitives.rs         -> Operaciones y funciones primitivas nativas
+|   |   +-- distribution.rs       -> Abstracciones y matemática de distribuciones
+|   |
+|   |-- interpreter/              -> Motor de evaluación y tiempo de ejecución
+|   |   |-- mod.rs                -> Exportaciones del evaluador
+|   |   |-- machine.rs            -> Máquina de evaluación para entornos y Closures
+|   |   +-- runtime.rs            -> Intérprete, dirección (Addresses) e interfaz de mensajes para el motor de inferencia.
+|   |
+|   +-- inference/                -> Motores de inferencia probabilística
+|       |-- mod.rs                -> Exportaciones de algoritmos
+|       |-- bbvi.rs               -> Algoritmo: Black-Box Variational Inference (BBVI)
+|       |-- exact_enumeration.rs  -> Algoritmo: Exact Enumeration
+|       |-- lw.rs                 -> Algoritmo: Likelihood Weighting
+|       |-- smc.rs                -> Algoritmo: Sequential Monte Carlo (SMC)
+|       +-- ssmh.rs               -> Algoritmo: Single-Site Metropolis-Hastings
+|
++-- tests/                   -> Pruebas unitarias y de integración
+    |-- parser_tests.rs      -> Pruebas de validación sintáctica y AST
+    |-- interpreter_tests.rs -> Pruebas de evaluación, recursión y Closures
+    |-- distributions_tests.rs -> Pruebas de densidad y distribuciones
+    |-- primitives_tests.rs  -> Pruebas para operaciones primitivas incluido distribuciones y operaciones sobre tipos de datos
+    +-- inference_tests.rs   -> Pruebas de convergencia de los algoritmos
+```
+
+## 🦀 Lenguaje de Implementación: ¿Por qué Rust?
+
+Aunque la consigna del proyecto permitía utilizar lenguajes interpretados de alto nivel (como Python), se tomó la decisión arquitectónica de desarrollar el proyecto —incluyendo el *lexer*, el *parser* para la sintaxis del **HOPPL** (*Higher-Order Probabilistic Programming Language*) y el motor de evaluación— completamente desde cero en **Rust**. 
+
+Esta elección se fundamenta en cuatro pilares críticos que aportan ventajas significativas al diseño de lenguajes y a la computación probabilística:
+
+### 1. Pattern Matching y Tipos Algebraicos (ADTs) para el AST
+El diseño de un intérprete requiere manipular continuamente árboles de sintaxis abstracta (AST) y evaluar expresiones recursivas. 
+* Los **Enums potentes (tipos algebraicos)** de Rust permiten modelar las expresiones del lenguaje probabilístico (operaciones, closures, llamadas `sample`, `observe`, etc.) de forma natural y autoexplicativa.
+* El **Pattern Matching exhaustivo** (`match`) garantiza que el evaluador maneje absolutamente todos los casos posibles y ramificaciones del AST. Si se agrega un nuevo nodo o primitiva al lenguaje, el compilador nos alertará exactamente de qué partes del evaluador necesitan ser actualizadas.
+
+### 2. Seguridad de Tipos y Prevención de Errores en Tiempo de Compilación
+A diferencia de lenguajes interpretados o con tipado dinámico donde los errores de lógica o de memoria explotan en tiempo de ejecución (a mitad de una simulación larga), el estricto sistema de tipos y el *Borrow Checker* de Rust actúan como una primera línea de defensa:
+* **Cero excepciones en tiempo de ejecución por referencias nulas:** El uso de tipos monádicos como `Option<T>` y `Result<T, E>` hace que el manejo de errores sintácticos en el *Parser* y errores semánticos en el *Evaluador* sea explícito y predecible.
+* **Seguridad de memoria sin Garbage Collector (GC):** Se evitan fugas de memoria y errores de segmentación sin pagar el costo de las pausas en tiempo de ejecución de un recolector de basura.
+
+### 3. Rendimiento y Eficiencia en Algoritmos de Inferencia
+Los algoritmos implementados en este proyecto (*Sequential Monte Carlo*, *Metropolis-Hastings* y *Likelihood Weighting*) son de naturaleza altamente intensiva a nivel computacional:
+* Por ejemplo, en **Sequential Monte Carlo (SMC)** es necesario mantener, evaluar y clonar miles de "partículas" (trazas de ejecución de los grafos probabilísticos) en paralelo y realizar re-muestreos (*resampling*) constantes.
+* Al ser un lenguaje compilado a código de máquina nativo con abstracciones de costo cero (*zero-cost abstractions*), Rust ejecuta simulaciones de miles de pasos de MCMC o partículas SMC en una fracción del tiempo que le tomaría a lenguajes interpretados como Python, logrando una eficiencia del orden de C o C++.
+
+### 4. Ergonomía para la Estructura de Traza (Trace Tracking)
+Para implementar algoritmos como **Single-Site Metropolis-Hastings**, es indispensable mantener una "traza" (*Trace*) que asocie de manera unívoca cada llamada condicional `sample` a una dirección de ejecución (*Address*). La propiedad de pertenencia (*Ownership*) y el clonado explícito de datos en Rust facilitan la creación de un sistema de seguimiento de direcciones limpio y sin efectos secundarios inesperados al modificar el estado de las variables aleatorias.
+
+## Aclaraciones Técnicas: CPS Funcional Puro vs. Máquina CEK
+
+Durante las iteraciones de diseño de este proyecto, y contemplando una sugerencia del profesor, se evaluó fuertemente la posibilidad de implementar el evaluador de expresiones utilizando **Continuation-Passing Style (CPS) funcional puro**. En la literatura clásica de Lisp, esto se logra pasando funciones de orden superior (*closures*) como continuaciones para pausar y reanudar el flujo. 
+
+Sin embargo, se tomó la decisión arquitectónica final de prescindir del CPS puro y utilizar en su lugar una **Máquina CEK (Control, Environment, Continuation)**, la cual es esencialmente la "defuncionalización" matemática del CPS. Esta decisión resuelve dos problemas críticos que presenta Rust:
+
+1. **La barrera de la clonación (Función `fork` para SMC y MCMC):** Este es el factor decisivo. Algoritmos como Sequential Monte Carlo requieren pausar la ejecución en cada instrucción `observe`, **clonar** el estado de la máquina en múltiples partículas, y reanudar de forma paralela. En Rust, es notoriamente complejo y limitante clonar un *closure* arbitrario oculto detrás de *Traits* dinámicos (ej. `Box<dyn Fn>`), ya que el compilador desconoce el tamaño y el contenido del entorno capturado en tiempo de ejecución. Al usar una Máquina CEK, la "continuación" pasa de ser una función opaca a una simple estructura de datos concreta (un vector de enums `Vec<Instr>`), haciendo que toda la máquina sea trivial y rápidamente clonable mediante `#[derive(Clone)]`.
+
+2. **Tipos Opacos y TCO (Tail Call Optimization):** Implementar CPS puro requiere construir tipos de retorno recursivos y encadenar *closures*. En Rust, lidiar con los tiempos de vida (*lifetimes*) de referencias dentro de múltiples *closures* anidados entorpece enormemente la legibilidad y mantenibilidad del evaluador. Además, al carecer Rust de optimización de llamadas de cola (TCO) garantizada, un CPS funcional puro para programas con recursión probabilística profunda terminaría provocando irremediablemente un *Stack Overflow*. La pila explícita de la máquina CEK maneja iterativamente el flujo en el *Heap*, evadiendo este problema por completo.
 
 # Extras
 
@@ -359,5 +628,3 @@ Se trata de un método de inferencia **100% determinista y exacto**. En lugar de
 
 
 **Nota:** A diferencia de **BBVI** este algoritmo de inferencia no se menciona de manera explícita en el libro, pero fue visto en clase, esto es debido a su poca aplicabilidad en casos reales.
-
-# Ejecutar Proyecto

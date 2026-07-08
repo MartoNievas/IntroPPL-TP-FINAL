@@ -117,74 +117,74 @@ mod inference_algorithms_tests {
         assert!(err_msg.contains("Static Analysis Error"), "Incorrect error message: {}", err_msg);
     }
 
+
     #[test]
-#[test]
-fn test_bbvi_convergence_coin_flip() {
+    fn test_bbvi_convergence_coin_flip() {
 
-    // Muestreamos 'x' de una Normal (rango ilimitado) 
-    // y calculamos 'p' usando la fórmula de la sigmoide: p = 1 / (1 + exp(-x))
-    // De esta forma, 'p' siempre será un valor válido entre 0 y 1 para el Bernoulli.
-    let program = r#"
-        (let [x (sample (normal 0.0 1.0))
-              p (/ 1.0 (+ 1.0 (exp (- 0.0 x))))]
-          (observe (bernoulli p) true)
-          (observe (bernoulli p) true)
-          (observe (bernoulli p) true)
-          p)
-    "#;
-
-    let mut rng = StdRng::seed_from_u64(42);
-    
-    let (elbo_history, theta_opt) = run_bbvi(program, 150, 15, 0.05, &mut rng).unwrap();
-
-    let initial_elbo = elbo_history[0];
-    let final_elbo = *elbo_history.last().unwrap();
-    
-    assert!(
-        final_elbo > initial_elbo,
-        "The ELBO should increase during optimization. Initial: {}, Final: {}", initial_elbo, final_elbo
-    );
-
-    assert!(!theta_opt.is_empty(), "Expected to optimize at least one probabilistic site");
-    println!("Initial ELBO: {:.4} -> Final ELBO: {:.4}", initial_elbo, final_elbo);
-}
-
-#[test]
-    fn test_exact_enumeration_8_bit_problem() {
-        let bits8 = r#"
-        (let [b1 (if (sample (bernoulli 0.5)) 1 0)
-              b2 (if (sample (bernoulli 0.5)) 1 0)
-              b3 (if (sample (bernoulli 0.5)) 1 0)
-              b4 (if (sample (bernoulli 0.5)) 1 0)
-              b5 (if (sample (bernoulli 0.5)) 1 0)
-              b6 (if (sample (bernoulli 0.5)) 1 0)
-              b7 (if (sample (bernoulli 0.5)) 1 0)
-              b8 (if (sample (bernoulli 0.5)) 1 0)
-              total (+ b1 b2 b3 b4 b5 b6 b7 b8)]
-          (observe (normal 7 1) total)
-          total)
+        // Muestreamos 'x' de una Normal (rango ilimitado) 
+        // y calculamos 'p' usando la fórmula de la sigmoide: p = 1 / (1 + exp(-x))
+        // De esta forma, 'p' siempre será un valor válido entre 0 y 1 para el Bernoulli.
+        let program = r#"
+            (let [x (sample (normal 0.0 1.0))
+                p (/ 1.0 (+ 1.0 (exp (- 0.0 x))))]
+            (observe (bernoulli p) true)
+            (observe (bernoulli p) true)
+            (observe (bernoulli p) true)
+            p)
         "#;
 
-        let runs8 = enumerate_traces(bits8, 10_000).unwrap();
-        let (pmf8, log_z8) = posterior_table(&runs8);
-
-        assert_eq!(runs8.len(), 256);
-        assert_eq!(pmf8.len(), 9);
+        let mut rng = StdRng::seed_from_u64(42);
         
-        for i in 0..=8 {
-            assert!(pmf8.iter().any(|(val, _, _ )| val.as_i64().expect("No numeric value") == i));
-        }
+        let (elbo_history, theta_opt) = run_bbvi(program, 150, 15, 0.05, &mut rng).unwrap();
 
-        // Relajamos la precisión a 1e-8 (Equivalente al np.allclose de Python)
-        let sum_probs: f64 = pmf8.iter().map(|(_, prob, _)| prob).sum();
-        assert!((sum_probs - 1.0).abs() < 1e-8, "La suma de probabilidades dio: {}", sum_probs);
+        let initial_elbo = elbo_history[0];
+        let final_elbo = *elbo_history.last().unwrap();
+        
+        assert!(
+            final_elbo > initial_elbo,
+            "The ELBO should increase during optimization. Initial: {}, Final: {}", initial_elbo, final_elbo
+        );
 
-        let expected_log_z = -2.9387946656298647;
-        assert!((log_z8 - expected_log_z).abs() < 1e-8);
-
-        let mean_enum: f64 = pmf8.iter().map(|(val, prob, _)| val.as_i64().expect("No numeric value") as f64 * prob).sum();
-        let expected_mean = 6.000655098870;
-        assert!((mean_enum - expected_mean).abs() < 1e-8);
+        assert!(!theta_opt.is_empty(), "Expected to optimize at least one probabilistic site");
+        println!("Initial ELBO: {:.4} -> Final ELBO: {:.4}", initial_elbo, final_elbo);
     }
+
+    #[test]
+        fn test_exact_enumeration_8_bit_problem() {
+            let bits8 = r#"
+            (let [b1 (if (sample (bernoulli 0.5)) 1 0)
+                b2 (if (sample (bernoulli 0.5)) 1 0)
+                b3 (if (sample (bernoulli 0.5)) 1 0)
+                b4 (if (sample (bernoulli 0.5)) 1 0)
+                b5 (if (sample (bernoulli 0.5)) 1 0)
+                b6 (if (sample (bernoulli 0.5)) 1 0)
+                b7 (if (sample (bernoulli 0.5)) 1 0)
+                b8 (if (sample (bernoulli 0.5)) 1 0)
+                total (+ b1 b2 b3 b4 b5 b6 b7 b8)]
+            (observe (normal 7 1) total)
+            total)
+            "#;
+
+            let runs8 = enumerate_traces(bits8, 10_000).unwrap();
+            let (pmf8, log_z8) = posterior_table(&runs8);
+
+            assert_eq!(runs8.len(), 256);
+            assert_eq!(pmf8.len(), 9);
+            
+            for i in 0..=8 {
+                assert!(pmf8.iter().any(|(val, _, _ )| val.as_i64().expect("No numeric value") == i));
+            }
+
+            // Relajamos la precisión a 1e-8 (Equivalente al np.allclose de Python)
+            let sum_probs: f64 = pmf8.iter().map(|(_, prob, _)| prob).sum();
+            assert!((sum_probs - 1.0).abs() < 1e-8, "La suma de probabilidades dio: {}", sum_probs);
+
+            let expected_log_z = -2.9387946656298647;
+            assert!((log_z8 - expected_log_z).abs() < 1e-8);
+
+            let mean_enum: f64 = pmf8.iter().map(|(val, prob, _)| val.as_i64().expect("No numeric value") as f64 * prob).sum();
+            let expected_mean = 6.000655098870;
+            assert!((mean_enum - expected_mean).abs() < 1e-8);
+        }
 
 }
