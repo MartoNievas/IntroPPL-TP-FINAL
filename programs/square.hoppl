@@ -1,0 +1,2 @@
+(let [square (fn [x] (* x x))]
+  (square 4))       ; -> 16

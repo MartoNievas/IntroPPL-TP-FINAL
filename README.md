@@ -410,39 +410,51 @@ El código fuente está organizado de forma modular siguiendo las convenciones e
 ```plaintext
 TP-FINAL-PPL
 |-- Cargo.lock
-|-- Cargo.toml                    -> Configuración y dependencias en Rust
-|-- LICENSE                       -> Licencia del proyecto
-|-- README.md                     -> Documentación principal del proyecto
+|-- Cargo.toml                  -> Configuración y dependencias en Rust
+|-- LICENSE                     -> Licencia del proyecto
+|-- README.md                   -> Documentación principal del proyecto
+|-- programs/                   -> Directorio de programas hoppl
 |-- src/
-|   |-- main.rs                   -> Punto de entrada y ejecutable de demostración
-|   |-- lib.rs                    -> Raíz de la librería que expone los módulos
+|   |-- main.rs                 -> Punto de entrada y ejecutable de demostración
+|   |-- lib.rs                  -> Raíz de la librería que expone los módulos
+|   |-- cli.rs                  -> Parseo de argv y validación en Config (Demo, File, Deterministic, 
+|   |                              Invalid)
+|   |-- ui.rs                   -> Formateo de colores, headers y mensajes para impresión por terminal
+|   |-- demos.rs                -> Definición de las 6 demostraciones hardcodeadas del intérprete
+|   |-- runner.rs               -> Ejecución de los distintos modos: demos completas/particulares,    
+|   |                              archivo determinístico/no determinístico
+|   |-- stats.rs                -> Estadística descriptiva y diagnósticos de convergencia (media, ESS, 
+|   |                              autocorrelación)
 |   |
-|   |-- parser/                   -> Módulo de análisis sintáctico y AST
-|   |   |-- mod.rs                -> Exportaciones del módulo de parsing
-|   |   |-- sexpr.rs              -> Analizador de S-Expressions y generación del AST (sintaxis Lisp/Clojure)
-|   |   |-- value.rs              -> Definición de RVal que uso como valor de retorno
-|   |   |-- primitives.rs         -> Operaciones y funciones primitivas nativas
-|   |   +-- distribution.rs       -> Abstracciones y matemática de distribuciones
+|   |-- parser/                 -> Módulo de análisis sintáctico y AST
+|   |   |-- mod.rs              -> Exportaciones del módulo de parsing
+|   |   |-- sexpr.rs            -> Analizador de S-Expressions y generación del AST (sintaxis Lisp/
+|   |   |                          Clojure)
+|   |   |-- value.rs            -> Definición de RVal que uso como valor de retorno
+|   |   |-- primitives.rs       -> Operaciones y funciones primitivas nativas
+|   |   +-- distribution.rs     -> Abstracciones y matemática de distribuciones
 |   |
-|   |-- interpreter/              -> Motor de evaluación y tiempo de ejecución
-|   |   |-- mod.rs                -> Exportaciones del evaluador
-|   |   |-- machine.rs            -> Máquina de evaluación para entornos y Closures
-|   |   +-- runtime.rs            -> Intérprete, dirección (Addresses) e interfaz de mensajes para el motor de inferencia.
+|   |-- interpreter/            -> Motor de evaluación y tiempo de ejecución
+|   |   |-- mod.rs              -> Exportaciones del evaluador
+|   |   |-- machine.rs          -> Máquina de evaluación para entornos y Closures
+|   |   +-- runtime.rs          -> Intérprete, direcciones (Addresses) e interfaz de mensajes para el 
+|   |                              motor de inferencia
 |   |
-|   +-- inference/                -> Motores de inferencia probabilística
-|       |-- mod.rs                -> Exportaciones de algoritmos
-|       |-- bbvi.rs               -> Algoritmo: Black-Box Variational Inference (BBVI)
-|       |-- exact_enumeration.rs  -> Algoritmo: Exact Enumeration
-|       |-- lw.rs                 -> Algoritmo: Likelihood Weighting
-|       |-- smc.rs                -> Algoritmo: Sequential Monte Carlo (SMC)
-|       +-- ssmh.rs               -> Algoritmo: Single-Site Metropolis-Hastings
+|   +-- inference/              -> Motores de inferencia probabilística
+|       |-- mod.rs              -> Exportaciones de algoritmos
+|       |-- bbvi.rs             -> Algoritmo: Black-Box Variational Inference (BBVI)
+|       |-- exact_enumeration.rs -> Algoritmo: Exact Enumeration
+|       |-- lw.rs               -> Algoritmo: Likelihood Weighting
+|       |-- smc.rs              -> Algoritmo: Sequential Monte Carlo (SMC)
+|       +-- ssmh.rs             -> Algoritmo: Single-Site Metropolis-Hastings
 |
-+-- tests/                   -> Pruebas unitarias y de integración
-    |-- parser_tests.rs      -> Pruebas de validación sintáctica y AST
-    |-- interpreter_tests.rs -> Pruebas de evaluación, recursión y Closures
-    |-- distributions_tests.rs -> Pruebas de densidad y distribuciones
-    |-- primitives_tests.rs  -> Pruebas para operaciones primitivas incluido distribuciones y operaciones sobre tipos de datos
-    +-- inference_tests.rs   -> Pruebas de convergencia de los algoritmos
++-- tests/                      -> Pruebas unitarias y de integración
+    |-- parser_tests.rs         -> Pruebas de validación sintáctica y AST
+    |-- interpreter_tests.rs    -> Pruebas de evaluación, recursión y Closures
+    |-- distributions_tests.rs  -> Pruebas de densidad y distribuciones
+    |-- primitives_tests.rs     -> Pruebas para operaciones primitivas incluido distribuciones y 
+    |                              operaciones sobre tipos de datos
+    +-- inference_tests.rs      -> Pruebas de convergencia de los algoritmos
 ```
 
 ## 🦀 Lenguaje de Implementación: ¿Por qué Rust?

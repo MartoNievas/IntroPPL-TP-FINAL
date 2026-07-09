@@ -30,19 +30,12 @@ pub fn as_f64(val: &RVal) -> f64 {
     match val {
         RVal::Float(f) => *f,
         RVal::Int(i) => *i as f64,
-        RVal::Bool(b) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
         _ => panic!("Se esperaba un valor numerico, se obtuvo: {val:?}"),
     }
 }
 
 pub fn is_numeric(val: &RVal) -> bool {
-    matches!(val, RVal::Float(_) | RVal::Int(_) | RVal::Bool(_))
+    matches!(val, RVal::Float(_) | RVal::Int(_))
 }
 
 pub fn print_categorical_weighted(vals: &[RVal], weights: &[f64]) {
