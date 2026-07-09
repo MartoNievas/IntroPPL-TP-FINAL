@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ndarray = "0.17.2" # El "NumPy" de Rust
+ndarray = "0.17.2" 
 rand = "0.10.2"
 rand_distr = "0.6.0"
 statrs = "0.18.0"

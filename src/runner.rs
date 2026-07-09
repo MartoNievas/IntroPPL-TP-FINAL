@@ -1,11 +1,11 @@
 /*
 
-Modulo que implementa los distintos modos de ejecución del lenguaje:
+Module that implements the different execution modes of the language:
 
-    - Demostraciones completas
-    - Demostracion particular
-    - Archivo no deterministico
-    - Archivo deterministico
+    - Full demonstrations
+    - Single demonstration
+    - Non-deterministic file
+    - Deterministic file
 
 */
 
@@ -32,9 +32,9 @@ use crate::stats::{
 };
 use crate::ui::{fmt_log_mass, pause, print_err, print_header, print_ok, print_warn};
 
-/// Unico punto de entrada de ejecucion: recibe la Config ya validada por
-/// `cli::Config::parse_args` y decide que correr. `main` no necesita saber
-/// nada mas que esto.
+// Single execution entry point: receives the Config already validated by
+// `cli::Config::parse_args` and decides what to run. `main` doesn't need to
+// know anything beyond this.
 pub fn run(config: Config) {
     match config {
         Config::Invalid(msg) => {
@@ -74,19 +74,19 @@ fn run_demos(selected: Option<usize>) {
         }
     }
 
-    print_header("FIN DE LA DEMOSTRACION - HOPPL EN RUST");
-    println!("Tiempo total: {:.2?}", total_start.elapsed());
+    print_header("END OF DEMONSTRATION - HOPPL IN RUST");
+    println!("Total time: {:.2?}", total_start.elapsed());
 
     if selected.is_none() {
         println!(
-            "Tip: ejecuta `cargo run -- <numero>` para correr una sola demo (1-{}).",
+            "Tip: run `cargo run -- <number>` to run a single demo (1-{}).",
             demos.len()
         );
         println!(
-            "Tip: ejecuta `cargo run -- <archivo.hoppl>` para correr un modelo deterministico propio."
+            "Tip: run `cargo run -- <file.hoppl>` to run your own deterministic model."
         );
         println!(
-            "Tip: ejecuta `cargo run -- <archivo.hoppl> <algoritmo>` para correr un modelo probabilistico propio."
+            "Tip: run `cargo run -- <file.hoppl> <algorithm>` to run your own probabilistic model."
         );
     }
 }
@@ -95,20 +95,20 @@ fn load_model_file(path: &str) -> String {
     match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(e) => {
-            print_err(&format!("No se pudo leer el archivo '{path}': {e}"));
+            print_err(&format!("Could not read file '{path}': {e}"));
             std::process::exit(1);
         }
     }
 }
 
-/// Corre un programa HOPPL que se asume **determinístico** (sin 'sample' ni
-/// 'observe'): en vez de invocar un motor de inferencia, avanza la máquina
-/// CEK directamente hasta que termine. Si el programa resulta tener efectos
-/// probabilísticos, se detecta apenas aparece el primero y se informa con
-/// un mensaje claro en vez de fallar de forma confusa.
+// Runs a HOPPL program assumed to be **deterministic** (no 'sample' or
+// 'observe'): instead of invoking an inference engine, it advances the CEK
+// machine directly until it finishes. If the program turns out to have
+// probabilistic effects, this is detected as soon as the first one appears
+// and reported with a clear message instead of failing in a confusing way.
 fn run_deterministic_model(file_path: &str, model: &str) {
-    print_header("MODO ARCHIVO: Ejecucion Deterministica");
-    println!("Modelo cargado:\n{}", model.trim());
+    print_header("FILE MODE: Deterministic Execution");
+    println!("Model loaded:\n{}", model.trim());
     println!();
 
     let start = Instant::now();
@@ -116,44 +116,44 @@ fn run_deterministic_model(file_path: &str, model: &str) {
     let machine = match initial_machine(model) {
         Ok(m) => m,
         Err(e) => {
-            print_err(&format!("Error al inicializar el programa: {e}"));
-            println!("   (tiempo: {:.2?})", start.elapsed());
+            print_err(&format!("Error initializing the program: {e}"));
+            println!("   (time: {:.2?})", start.elapsed());
             return;
         }
     };
 
     match resume(machine) {
         Ok(Msg::Done(value, _)) => {
-            print_ok(&format!("Resultado: {}", value));
+            print_ok(&format!("Result: {}", value));
         }
 
         Ok(Msg::Sample(addr, _, _)) => {
             print_err(&format!(
-                "El programa no es deterministico: se encontro un 'sample' en la direccion {addr:?}."
+                "The program is not deterministic: found a 'sample' at address {addr:?}."
             ));
             println!(
-                "   Este modo es solo para programas sin 'sample'/'observe'. Corre con un algoritmo de inferencia en su lugar:"
+                "   This mode is only for programs without 'sample'/'observe'. Run with an inference algorithm instead:"
             );
             println!(
-                "      cargo run -- {file_path} <algoritmo>   (lw | ssmh | smc | bbvi | exact-enumeration)"
+                "      cargo run -- {file_path} <algorithm>   (lw | ssmh | smc | bbvi | exact-enumeration)"
             );
         }
 
         Ok(Msg::Observe(addr, _, _, _)) => {
             print_err(&format!(
-                "El programa no es deterministico: se encontro un 'observe' en la direccion {addr:?}."
+                "The program is not deterministic: found an 'observe' at address {addr:?}."
             ));
             println!(
-                "   Este modo es solo para programas sin 'sample'/'observe'. Corre con un algoritmo de inferencia en su lugar:"
+                "   This mode is only for programs without 'sample'/'observe'. Run with an inference algorithm instead:"
             );
             println!(
-                "      cargo run -- {file_path} <algoritmo>   (lw | ssmh | smc | bbvi | exact-enumeration)"
+                "      cargo run -- {file_path} <algorithm>   (lw | ssmh | smc | bbvi | exact-enumeration)"
             );
         }
-        Err(e) => print_err(&format!("Error de ejecucion: {e}")),
+        Err(e) => print_err(&format!("Execution error: {e}")),
     }
 
-    println!("   (tiempo: {:.2?})", start.elapsed());
+    println!("   (time: {:.2?})", start.elapsed());
 }
 
 fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
@@ -166,15 +166,15 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
     const BBVI_LR: f64 = 0.05;
     const ENUM_MAX_TRACES: usize = 100000;
 
-    print_header(&format!("MODO ARCHIVO: {}", algorithm.label()));
-    println!("Modelo cargado:\n{}", model.trim());
+    print_header(&format!("FILE MODE: {}", algorithm.label()));
+    println!("Model loaded:\n{}", model.trim());
     println!();
 
     let start = Instant::now();
 
     match algorithm {
         Algorithm::Lw => {
-            println!("  Ejecutando LW con {N_PARTICLES_LW} particulas...");
+            println!("  Running LW with {N_PARTICLES_LW} particles...");
             match likelihood_weighting(model, N_PARTICLES_LW, rng) {
                 Ok((vals, weights)) => {
                     if vals.iter().all(is_numeric) {
@@ -182,7 +182,7 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                         let std_err = (var / N_PARTICLES_LW as f64).sqrt();
                         let ess = effective_sample_size(&weights);
                         print_ok(&format!(
-                            "Media a posteriori estimada: {mean:.4} ± {std_err:.4}"
+                            "Estimated posterior mean: {mean:.4} ± {std_err:.4}"
                         ));
                         print_ok(&format!(
                             "Effective Sample Size (ESS): {ess:.1} / {N_PARTICLES_LW}"
@@ -191,45 +191,45 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                         print_categorical_weighted(&vals, &weights);
                     }
                 }
-                Err(e) => print_err(&format!("Fallo en Likelihood Weighting: {e}")),
+                Err(e) => print_err(&format!("Failure in Likelihood Weighting: {e}")),
             }
         }
         Algorithm::Smc => {
-            println!("Ejecutando SMC con {N_PARTICLES_SMC} particulas sincronizadas...");
+            println!("Running SMC with {N_PARTICLES_SMC} synchronized particles...");
             match run_smc(model, N_PARTICLES_SMC, rng) {
                 Ok(vals) => {
                     if vals.iter().all(is_numeric) {
                         let (mean, std_err) = sample_mean_std_err(&vals);
                         print_ok(&format!(
-                            "Valor esperado estimado: {mean:.4} ± {std_err:.4}"
+                            "Estimated expected value: {mean:.4} ± {std_err:.4}"
                         ));
                     } else {
                         print_categorical_unweighted(&vals);
                     }
                 }
-                Err(e) => print_err(&format!("Fallo en SMC: {e}")),
+                Err(e) => print_err(&format!("Failure in SMC: {e}")),
             }
         }
         Algorithm::Ssmh => {
-            println!("Ejecutando SSMH (Pasos: {SSMH_STEPS}, Warmup: {SSMH_WARMUP})...");
+            println!("Running SSMH (Steps: {SSMH_STEPS}, Warmup: {SSMH_WARMUP})...");
             match single_site_mh(model, rng, SSMH_STEPS, SSMH_WARMUP) {
                 Ok(chain) => {
                     if chain.iter().all(is_numeric) {
                         let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
-                        print_ok(&format!("Valor estimado: {mean:.4} ± {std_err:.4}"));
+                        print_ok(&format!("Estimated value: {mean:.4} ± {std_err:.4}"));
                         print_ok(&format!(
-                            "Effective Sample Size (ESS, por autocorrelacion): {ess:.1} / {SSMH_STEPS}"
+                            "Effective Sample Size (ESS, via autocorrelation): {ess:.1} / {SSMH_STEPS}"
                         ));
                     } else {
                         print_categorical_unweighted(&chain);
                     }
                 }
-                Err(e) => print_err(&format!("Fallo en SSMH: {e}")),
+                Err(e) => print_err(&format!("Failure in SSMH: {e}")),
             }
         }
         Algorithm::Bbvi => {
             println!(
-                "Optimizando ELBO con Adam (Pasos: {BBVI_STEPS}, Muestras/Lote: {BBVI_SAMPLES}, LR: {BBVI_LR})..."
+                "Optimizing ELBO with Adam (Steps: {BBVI_STEPS}, Samples/Batch: {BBVI_SAMPLES}, LR: {BBVI_LR})..."
             );
             match run_bbvi(model, BBVI_STEPS, BBVI_SAMPLES, BBVI_LR, rng) {
                 Ok((elbo_history, theta_opt)) => {
@@ -237,30 +237,30 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                     let elbo_final = elbo_history.last().unwrap();
                     let delta = elbo_final - elbo_inicial;
 
-                    println!("\nResultados de la Optimizacion Variacional:");
-                    println!("   ELBO Inicial : {elbo_inicial:.4}");
-                    println!("   ELBO Final   : {elbo_final:.4}");
+                    println!("\nResults of the Variational Optimization:");
+                    println!("   Initial ELBO : {elbo_inicial:.4}");
+                    println!("   Final ELBO   : {elbo_final:.4}");
                     println!("   Delta ELBO   : {delta:+.4}");
 
                     if delta > 0.0 {
                         print_ok(
-                            "La ELBO ascendio con exito. El optimizador redujo la divergencia.",
+                            "The ELBO ascended successfully. The optimizer reduced the divergence.",
                         );
                     } else {
-                        print_warn("La ELBO no subio significativamente.");
+                        print_warn("The ELBO did not rise significantly.");
                     }
 
-                    println!("\n   Parametros Variacionales Optimizados (Theta):");
+                    println!("\n   Optimized Variational Parameters (Theta):");
                     for (addr, params) in theta_opt {
                         let fmt_addr = addr.join("/");
-                        println!("      Direccion [{fmt_addr}]: {params:?}");
+                        println!("      Address [{fmt_addr}]: {params:?}");
                     }
                 }
-                Err(e) => print_err(&format!("Fallo en BBVI: {e}")),
+                Err(e) => print_err(&format!("Failure in BBVI: {e}")),
             }
         }
         Algorithm::Enumeration => {
-            println!("Explorando todos los estados posibles...");
+            println!("Exploring all possible states...");
             match enumerate_traces(model, ENUM_MAX_TRACES) {
                 Ok(runs) => {
                     let (mut pmf, log_z) = posterior_table(&runs);
@@ -268,14 +268,14 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                     pmf.sort_by(|a, b| a.0.as_i64().cmp(&b.0.as_i64()));
 
                     print_ok(&format!(
-                        "Enumeracion completada. Log Evidence (Z): {log_z:.4}"
+                        "Enumeration complete. Log Evidence (Z): {log_z:.4}"
                     ));
-                    print_ok(&format!("Estados explorados totales: {}", runs.len()));
+                    print_ok(&format!("Total states explored: {}", runs.len()));
 
                     let mut table = Table::builder().style(TableStyle::elegant()).build();
 
                     table.add_row(Row::new(vec![
-                        TableCell::builder("Valor")
+                        TableCell::builder("Value")
                             .alignment(Alignment::Center)
                             .build(),
                         TableCell::builder("Prob")
@@ -312,10 +312,10 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                         println!("  {}", line)
                     }
                 }
-                Err(e) => print_err(&format!("Fallo: {e}")),
+                Err(e) => print_err(&format!("Failure: {e}")),
             }
         }
     }
 
-    println!("   (tiempo: {:.2?})", start.elapsed());
+    println!("   (time: {:.2?})", start.elapsed());
 }

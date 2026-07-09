@@ -1,7 +1,8 @@
 /*
 
-Modulo que implemente el algoritmo de inferencia Single Site Metropolis-Hastings / SSMH, este es un algoritmo Markov Chain Monte Carlo / MCMC
-El mismo realiza una camina aleatoria sobre la traza de ejecucion.
+Module that implements the Single-Site Metropolis-Hastings (SSMH) inference
+algorithm, a Markov Chain Monte Carlo (MCMC) algorithm. It performs a random
+walk over the program's execution trace.
 
 */
 
@@ -10,7 +11,7 @@ use crate::parser::value::RVal;
 use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-/// La Traza captura el historial completo de una ejecución del programa.
+/// The Trace captures the complete history of a single execution of the program.
 #[derive(Clone, Debug, Default)]
 pub struct Trace {
     pub values: HashMap<Addr, RVal>,

@@ -1,7 +1,7 @@
 /*
 
-Módulo que implementa el interprete como tal, este módulo se encarga de la ejecución del codigo,
-y comunicarse con la interfaz de mensajes para la inferencia.
+Module that implements the interpreter itself; it is responsible for executing the
+code and communicating with the message interface used for inference.
 
 */
 
@@ -10,20 +10,20 @@ use crate::parser::sexpr::Form;
 use crate::parser::primitives::{is_primitive, make_primitives};
 use crate::parser::value::RVal;
 
-// Ejecuta instrucciones del stack de control hasta encontrar un efecto probabilistico
+// Executes instructions from the control stack until it encounters a probabilistic effect
 pub fn resume(mut m: Machine) -> Result<Msg, String> {
     while let Some(instr) = m.c.pop() {
         match instr {
             Instr::Eval(expr, env, addr) => {
                 match expr {
-                    // 1. Atomos van directamente al Stack de valores (V)
+                    // 1. Atoms go straight to the value stack (V)
                     Form::Int(i) => m.v.push(RVal::Int(i)),
                     Form::Float(f) => m.v.push(RVal::Float(f)),
                     Form::Bool(b) => m.v.push(RVal::Bool(b)),
                     Form::Str(s) => m.v.push(RVal::Str(s)),
                     Form::Nil => m.v.push(RVal::Nil),
 
-                    // 2. Simbolos: hacemos la busqueda en el entorno local/global o tabla de primitivas
+                    // 2. Symbols: look them up in the local/global environment or the primitives table
                     Form::Symbol(s) => {
                         if let Some(val) = env.get(&s) {
                             m.v.push(val.clone());
@@ -36,7 +36,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                         }
                     }
 
-                    // 3. Listas: formas especiales o invocacion de funciones
+                    // 3. Lists: special forms or function invocation
 
                     Form::List(list, _list_type) => {
                         if list.is_empty() {
@@ -61,7 +61,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                             let mut first_addr = addr.clone();
                                             first_addr.push("let_0".into());
 
-                                            // Empujamos la continuación del let y evaluamos la primera expresión
+                                            // Push the let's continuation and evaluate the first expression
                                             m.c.push(Instr::LetK {
                                                 binds: binds.clone(),
                                                 idx: 0,
@@ -132,7 +132,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                 }
 
                                 _ => {
-                                    // Llamada estandar a funcion o primitiva: (f arg1 arg2 ...)
+                                    // Standard call to a function or primitive: (f arg1 arg2 ...)
                                     let n_args = list.len() - 1;
                                     m.c.push(Instr::CallK(n_args, addr.clone()));
                                     for i in (1..=n_args).rev() {
@@ -169,7 +169,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                     env.insert(var_name.clone(), val);
 
                     if 2 * (idx + 1) < binds.len() {
-                        // Aun quedan variables en el let
+                        // There are still variables left in the let
                         let next_idx = idx + 1;
                         let mut next_addr = addr.clone();
                         next_addr.push(format!("let_{}", 2 * next_idx));
@@ -184,7 +184,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
 
                         m.c.push(Instr::Eval(binds[2 * next_idx + 1].clone(), env, next_addr));
                     } else {
-                        // Todas las variables fueron enlazadas -> evaluar cuerpo
+                        // All variables have been bound -> evaluate the body
                         push_body(&mut m.c, &body, &env, addr);
                     }
                 } else {
@@ -203,11 +203,11 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                 for _ in 0..n_args {
                     args.push(m.v.pop().ok_or("Missing arguments on the value stack while evaluating CallK continuation")?);
                 }
-                args.reverse(); // Invertimos el orden para tenerlos en orden correcto
+                args.reverse(); // Reverse the order so they are in the correct order
 
                 let func = m.v.pop().ok_or("Missing function on the value stack while evaluating CallK continuation")?;
 
-                // 1. Primitivas deterministicas por nombre
+                // 1. Deterministic primitives by name
                 if let RVal::Str(prim_name) = &func {
                     let prims = make_primitives();
                     if let Some(prim_fn) = prims.get(prim_name.as_str()) {
@@ -217,7 +217,7 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                         return Err(format!("Unknown primitive function: '{}'", prim_name));
                     }
                 }
-                // 2. Clousure
+                // 2. Closure
                 else if let RVal::Closure(f) = func {
                     if f.params.len() != args.len() {
                         return Err(format!("Arity mismatch: closure expected {} arguments, but received {}", f.params.len(), args.len()));
@@ -257,17 +257,17 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
             }
         }
     }
-    // Si el stack C se vacía por completo, el programa terminó
+    // If the C stack empties out completely, the program has finished
     let final_val = m.v.pop().unwrap_or(RVal::Nil);
     Ok(Msg::Done(final_val, m))
 }
 
-/// Inyecta un valor en el stack de una máquina pausada (equivalente a send en Python).
+/// Injects a value into the stack of a paused machine (equivalent to `send` in Python).
 pub fn send(m: &mut Machine, val: RVal) {
     m.v.push(val);
 }
 
-// Funcion auxiliar para empujar secuencias de expresiones
+// Helper function to push a sequence of expressions
 fn push_body(c: &mut Vec<Instr>, body: &[Form], env: &Env, addr: Addr) {
     let n = body.len();
     if n == 0 {

@@ -1,15 +1,14 @@
 /*
 
-Objeto que sirve como valor de retorno de todas la primitivas incluidas distribuciones.
-Se implementa ya que no tenemos el tipado dinamico de python entonces utilzamos los tipos algebraicos/enums de rust
+Object that serves as the return value of all primitives, including distributions.
+This is implemented because we don't have Python's dynamic typing, so instead we
+use Rust's algebraic types/enums.
 
 */
 
 use std::hash::Hash;
 use std::{collections::HashMap};
- 
 use ndarray::{Array2};
- 
 use crate::parser::distribution::{Distribution};
 
 use crate::parser::primitives::HashKey;
@@ -50,7 +49,6 @@ impl RVal {
         }
     }
 }
- 
 impl PartialEq for RVal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -67,7 +65,6 @@ impl PartialEq for RVal {
     }
 }
 
- 
 impl std::fmt::Display for RVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -100,7 +97,7 @@ impl std::fmt::Display for RVal {
 }
 
 
-// Implementamos los traits Eq y Hash para RVal, esto para optimizar la tabla de exact enumertion
+// We implement the Eq and Hash traits for RVal to optimize the exact enumeration table
 
 impl Eq for RVal {}
 
@@ -109,19 +106,19 @@ impl Hash for RVal {
         std::mem::discriminant(self).hash(state);
         match self {
             RVal::Int(i) => i.hash(state),
-            RVal::Float(f) => f.to_bits().hash(state), // Convertimos bits para hashear floats
+            RVal::Float(f) => f.to_bits().hash(state), // Convert to bits to hash floats
             RVal::Bool(b) => b.hash(state),
             RVal::Str(s) => s.hash(state),
             RVal::Nil => ().hash(state),
             RVal::List(v) => v.hash(state),
             RVal::Map(m) => {
-                // Los mapas son difíciles de hashear por el orden, 
-                // pero si HashKey lo permite, usamos su tamaño
+                // Maps are hard to hash because of ordering,
+                // but if HashKey allows it, we use its size
                 m.len().hash(state);
             }
-            // Para tipos complejos como Matrix, Closure o Dist, 
-            // no es recomendable usarlos como claves en un HashMap.
-            // Si llegan a ocurrir, hasheamos su dirección o simplemente saltamos
+            // For complex types like Matrix, Closure, or Dist,
+            // it isn't advisable to use them as HashMap keys.
+            // If that happens anyway, we hash their address or just skip them
             _ => 0.hash(state),
         }
     }

@@ -1,7 +1,8 @@
 /*
 
-Módulo para la implementacion de funciones deterministas y distribuciones del lenguaje que viven en el entorno global
-de las máquinas de ejecución en forma de HashMap que vincula el simbolo con el procedimiento correspondiete.
+Module implementing the language's deterministic functions and distributions that live
+in the global environment of the execution machines, in the form of a HashMap linking
+each symbol to its corresponding procedure.
 
 */
 
@@ -39,15 +40,15 @@ impl std::fmt::Display for HashKey {
     }
 }
 
-// Tipo de funcion primitiva determinística
+// Deterministic primitive function type
 pub type PrimFn = Box<dyn Fn(&[RVal]) -> Result<RVal, String> + Send + Sync>;
 
-// Tabla de primitivas determinísticas equivalente a la tabla de primitivas de Python. Se usa para construir el entorno inicial.
+// Table of deterministic primitives, equivalent to Python's primitives table. Used to build the initial environment.
 
 pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     let mut m: HashMap<&'static str, PrimFn> = HashMap::new();
  
-    // aritmética
+    // arithmetic
     m.insert("+",    Box::new(prim_add));
     m.insert("-",    Box::new(prim_sub));
     m.insert("*",    Box::new(prim_mul));
@@ -76,7 +77,7 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
             Ok(smart_num(to_f64(&a[0])? % divisor))
         }
     })); 
-    // comparación y lógica
+    // comparison and logic
     m.insert("=",    Box::new(prim_eq));
     m.insert("==",   Box::new(prim_eq));
     m.insert("!=",   Box::new(|a| Ok(RVal::Bool(a[0] != a[1]))));
@@ -88,7 +89,7 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     m.insert("or",   Box::new(prim_or));
     m.insert("not",  Box::new(prim_not));
  
-    // estructuras de datos
+    // data structures
     m.insert("vector",   Box::new(prim_vector));
     m.insert("list",     Box::new(prim_vector)); // alias
     m.insert("hash-map", Box::new(prim_hash_map));
@@ -120,9 +121,9 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     m.insert("mat-relu",      Box::new(prim_mat_relu));
     m.insert("mat-repmat",    Box::new(prim_mat_repmat));
 
-    //  Constructores de distribuciones ( Equivalente a S.update(DISTRIBUTIONS) de Python)
-    // Cada nombre de distribucion toma sus argumentos y devuelve un RVal::Dist con la distribucion correspondiente
-    // Notar que hay algunas distribuciones que tiene aliases, como por ejemplo bernoulli con flip.
+    //  Distribution constructors (equivalent to Python's S.update(DISTRIBUTIONS))
+    // Each distribution name takes its arguments and returns an RVal::Dist with the corresponding distribution.
+    // Note that some distributions have aliases, e.g. bernoulli with flip.
         for name in &[
         "normal", "log-normal", "beta", "gamma", "exponential",
         "uniform-continuous", "uniform", "poisson", "bernoulli", "flip",
@@ -130,19 +131,19 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     ] {
         let name_owned = *name;
         m.insert(name_owned, Box::new(move |args: &[RVal]| {
-    // Si la distribución es "discrete" o "dirichlet", extrae los datos de la lista
+    // If the distribution is "discrete" or "dirichlet", extract the data from the list
     let dist = if name_owned == "discrete" || name_owned == "categorical" || name_owned == "dirichlet" {
-        // Extrae el vector de RVal::List y conviértelo a Vec<f64>
+        // Extract the vector from RVal::List and convert it to Vec<f64>
         if let RVal::List(v) = &args[0] {
             let nums: Result<Vec<f64>, _> = v.iter().map(to_f64).collect();
             make_distribution(name_owned, &nums?)?
         } else {
-            // Caso donde pasan los números como argumentos individuales
+            // Case where the numbers are passed as individual arguments
             let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
             make_distribution(name_owned, &nums?)?
         }
     } else {
-        // Caso normal (normal, log-normal, etc.)
+        // Normal case (normal, log-normal, etc.)
         let nums: Result<Vec<f64>, _> = args.iter().map(to_f64).collect();
         make_distribution(name_owned, &nums?)?
     };
@@ -152,13 +153,13 @@ pub fn make_primitives() -> HashMap<&'static str, PrimFn> {
     m
 }
 
-// Funcion auxiliar que sirve para detectar si es una función primitiva.
+// Helper function used to detect whether something is a primitive function.
 pub fn is_primitive(name: &str) -> bool {
     make_primitives().contains_key(name)
 }
 
-// Helpers de conversion equivalente a los de python
-// Bool se convierte igual que python: true -> 1, false -> 0
+// Conversion helpers equivalent to Python's
+// Bool converts the same way as Python: true -> 1, false -> 0
 fn to_f64(v: &RVal) -> Result<f64, String> {
     match v {
         RVal::Int(i) => Ok(*i as f64),
@@ -170,7 +171,7 @@ fn to_f64(v: &RVal) -> Result<f64, String> {
 
 
 
-// Convierte un RVal a u64 para operaciones con indices
+// Converts an RVal to i64, for use in index operations
 fn to_i64(v: &RVal) -> Result<i64, String> {
     match v {
         RVal::Int(i) => Ok(*i),
@@ -181,8 +182,8 @@ fn to_i64(v: &RVal) -> Result<i64, String> {
 }
 
 
-// Convierte a Array2<f64>. Acepta Matrix directamente, o una List de Lists
-// (equivalente a _to_mat del Python).
+// Converts to Array2<f64>. Accepts a Matrix directly, or a List of Lists
+// (equivalent to Python's _to_mat).
 
 fn to_matrix(v: &RVal) -> Result<Array2<f64>, String> {
     match v {
@@ -194,7 +195,7 @@ fn to_matrix(v: &RVal) -> Result<Array2<f64>, String> {
             let ncols = match &rows[0] {
                 RVal::List(r) => r.len(),
                 _ => {
-                    // vector 1-D -> columna
+                    // 1-D vector -> column
                     let data: Result<Vec<f64>, _> = rows.iter().map(to_f64).collect();
                     let data = data?;
                     let n = data.len();
@@ -223,12 +224,12 @@ fn array2_to_rval(m: Array2<f64>) -> RVal {
 }
 
 
-// Implementación de funciones primitivas determinísticas
+// Implementation of deterministic primitive functions
 
-// -- Aritmetica --
+// -- Arithmetic --
 
 fn prim_add(args: &[RVal]) -> Result<RVal, String> {
-    // Soporta matrices (como numpy)
+    // Supports matrices (like numpy)
     if args.iter().any(|a| matches!(a, RVal::Matrix(_))) {
         let mut acc = to_matrix(&args[0])?;
         for a in &args[1..] {
@@ -280,8 +281,8 @@ fn prim_div(args: &[RVal]) -> Result<RVal, String> {
 }
 
 
-/// Si el valor es un entero exacto, devuelve RVal::Int; si no, RVal::Float.
-/// Replica el comportamiento de Python donde int+int sigue siendo int.
+/// If the value is an exact integer, returns RVal::Int; otherwise, RVal::Float.
+/// Replicates Python's behavior where int+int stays an int.
 fn smart_num(x: f64) -> RVal {
     if x.fract() == 0.0 && x.abs() < i64::MAX as f64 {
         RVal::Int(x as i64)
@@ -290,7 +291,7 @@ fn smart_num(x: f64) -> RVal {
     }
 }
 
-// -- Comparaciones --
+// -- Comparisons --
 
 fn prim_eq(args: &[RVal]) -> Result<RVal, String> {
     let (a, b) = (&args[0], &args[1]);
@@ -338,7 +339,7 @@ fn to_bool(v: &RVal) -> bool {
 }
 
 
-// -- Estructuras de datos --
+// -- Data structures --
 
 fn prim_vector(args: &[RVal]) -> Result< RVal, String> {
     Ok(RVal::List(args.to_vec()))
@@ -376,7 +377,7 @@ fn prim_get(args: &[RVal]) -> Result< RVal, String> {
         }
         RVal::Matrix(m) => {
             let idx = to_i64(key)? as usize;
-            // indexar por fila devuelve una List
+            // indexing by row returns a List
             let row: Vec<RVal> = m.row(idx).iter().map(|&x| RVal::Float(x)).collect();
             Ok(RVal::List(row))
         }
@@ -502,7 +503,7 @@ fn prim_empty(args: &[RVal]) -> Result<RVal, String> {
 }
  
 fn prim_peek(args: &[RVal]) -> Result<RVal, String> {
-    prim_last(args) // en Clojure, peek en vector = last
+    prim_last(args) // in Clojure, peek on a vector == last
 }
  
 fn prim_range(args: &[RVal]) -> Result<RVal, String> {
@@ -528,7 +529,7 @@ fn prim_is_number(args: &[RVal]) -> Result<RVal, String> {
     Ok(RVal::Bool(matches!(&args[0], RVal::Int(_) | RVal::Float(_))))
 }
  
-// --- operaciones matriciales ---
+// --- matrix operations ---
  
 fn prim_mat_mul(args: &[RVal]) -> Result<RVal, String> {
     let a = to_matrix(&args[0])?;
@@ -558,7 +559,7 @@ fn prim_mat_relu(args: &[RVal]) -> Result<RVal, String> {
     Ok(array2_to_rval(a.mapv(|x| x.max(0.0))))
 }
  
-/// mat-repmat: equivalente a np.tile(a, (r, c)).
+/// mat-repmat: equivalent to np.tile(a, (r, c)).
 fn prim_mat_repmat(args: &[RVal]) -> Result<RVal, String> {
     let a = to_matrix(&args[0])?;
     let r = to_i64(&args[1])? as usize;

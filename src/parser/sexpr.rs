@@ -1,11 +1,11 @@
 /* 
 
-Módulo que se encarga de parsear s-expresiones y crear el AST correspondiente.
-Tambien se implementa to_string que toma el AST y hace el camino inverso.
+Module responsible for parsing s-expressions and building the corresponding AST.
+It also implements to_string, which takes the AST and does the reverse path.
 
 */
 
-// ListType: nos ayuda a distinguir si tenemos que poner brackest o parentesis en el to_string
+// ListType: helps us tell whether we need brackets or parentheses in to_string
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListType {
     Paren, // ()
@@ -32,15 +32,15 @@ impl std::fmt::Display for Form {
 
 /*
 
-Ahora definimos la API publica del parser del lenguaje con la funciones:
+Here we define the public API of the language's parser, with the functions:
 parse / parse_one / to_string
 
 */
 
 /*
 
-Parsea el texto fuente y devuelve una lista de todas las formas de nivel superior
-Equivalente a `parse(texto)` de python
+Parses the source text and returns a list of all the top-level forms.
+Equivalent to Python's `parse(text)`
 
 */
 pub fn parse(text: &str) -> Result<Vec<Form>, String> {
@@ -58,8 +58,8 @@ pub fn parse(text: &str) -> Result<Vec<Form>, String> {
 
 /*
 
-Parsea el texto que contiene exactamente una forma de nivel superior
-Equivalente a `parse_one(text) de python`
+Parses text that contains exactly one top-level form.
+Equivalent to Python's `parse_one(text)`
 
 */
 
@@ -73,8 +73,8 @@ pub fn parse_one(text: &str) -> Result<Form, String> {
 
 /*
 
-Renderiza un Form de vuelta a texto fuente (aproximado).
-Equivalente a `to_string(form)` de python
+Renders a Form back into (approximate) source text.
+Equivalent to Python's `to_string(form)`
 
 */
 
@@ -87,7 +87,7 @@ pub fn to_string(form: &Form) -> String {
         Form::Str(s) => format!("\"{s}\""),
         Form::Int(i) => i.to_string(),
         Form::Float(f) => {
-            // Si es un numero entero exacto, mostramos con .0 para que siga siendo float
+            // If it's an exact integer value, show it with .0 so it still reads as a float
 
             if f.fract() == 0.0 {
                 format!("{f:.1}")
@@ -112,7 +112,7 @@ pub fn to_string(form: &Form) -> String {
 }
 
 
-/* Token: tipo interno del tokenizador 
+/* Token: internal tokenizer type 
 
 */
 
@@ -130,8 +130,8 @@ enum Token {
 
 /*
     tokenize
-    Convierte el texto fuerte en una secuencia de tokens
-    Es equivalente al tokenize de python
+    Converts the source text into a sequence of tokens.
+    Equivalent to Python's tokenize
 */ 
 
 fn tokenize(text: &str) -> Result<Vec<Token>, String> {
@@ -144,7 +144,7 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                 chars.next();
             },
             ';' => {
-                // iteramos hasta encontrar un salto de linea
+                // iterate until we find a line break
                 while chars.next_if(|&c| c != '\n').is_some() {}
             }
             '('  => {
@@ -162,13 +162,13 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
 
             // String literal
             '"' => {
-                chars.next(); // Consumimos comilla de apertura
+                chars.next(); // Consume the opening quote
                 let mut buffer = String::new();
                 loop {
                     match chars.next() {
                         None => return Err("Syntax error: Unterminated string literal. A string was opened with '\"' but never closed.".into()),
-                        Some('"') => break, // llegamos al final del string literal
-                        Some('\\') => match chars.next() { // char escapado
+                        Some('"') => break, // we reached the end of the string literal
+                        Some('\\') => match chars.next() { // escaped char
                             Some('n') => buffer.push('\n'),
                             Some('t') => buffer.push('\t'),
                             Some('\\') => buffer.push('\\'),
@@ -182,7 +182,7 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                 tokens.push(Token::StringLit(buffer));
             }
 
-            // Atomo
+            // Atom
             _ => {
 
                 let mut buf = String::new();
@@ -203,8 +203,8 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
 
 
 /*
-    atom: convierte un token Atom en el Form adecuado
-    es equivalente a la version de python
+    atom: converts an Atom token into the appropriate Form
+    equivalent to the Python version
 */
 
 fn atom(s: &str) -> Form {
@@ -227,8 +227,8 @@ fn atom(s: &str) -> Form {
 
 /*
 
-read_form: parser recursivo
-equivalente a _read de python
+read_form: recursive parser
+equivalent to Python's _read
 
 */
 

@@ -1,8 +1,9 @@
 /*
 
-Módulo que implementar la máquina de estados para la ejecucion de un programa del hoppl, esta se encarga de llevar
-registro de las pilas de ejecución, el Eviroment global donde viven las primitivas y el local.
-Ademas implementa la funcionalidad de clonar el estado de una máquina para implementar smc.
+Module that implements the state machine used to execute a HOPPL program. It is
+responsible for tracking the execution stacks and the global Environment where the
+primitives live, as well as the local one. It also implements the functionality to
+clone a machine's state, which SMC relies on.
 
 */
 
@@ -21,16 +22,16 @@ pub struct Closure {
     pub env: Env,
 }
 
-// Aqui introducimos el stack de control
-// Cada variante *K representa un frame de continuacion pediente por ejecutar
+// Here we introduce the control stack.
+// Each *K variant represents a continuation frame that is still pending execution.
 
 #[derive(Debug, Clone)]
 pub enum Instr {
 
-    // Evaluar una expresion en el entorno y direccion dados
+    // Evaluate an expression in the given environment and address
     Eval(Form, Env, Addr),
 
-    // Continuacion de `let`: procesar el siguiente enlace o evaluar el cuerpo
+    // Continuation for `let`: process the next binding or evaluate the body
     LetK {
         binds: Vec<Form>,
         idx: usize,
@@ -39,24 +40,24 @@ pub enum Instr {
         addr: Addr,
     },
 
-    // Continuacion de `if`: evaluar la rama `then` o `else` segun
-    // el valor del predicado
+    // Continuation for `if`: evaluate the `then` or `else` branch depending
+    // on the value of the predicate
     IfK(Form, Form, Env, Addr),
 
-    // Continuacion a funcion primitiva: `callk` con el numero de argumentos de usize
+    // Continuation for a primitive function call: `callk` with the number of arguments as usize
     CallK(usize, Addr),
 
-    // Continuacion de muestreo probabilistico
+    // Continuation for probabilistic sampling
     SampleK(Addr),
 
-    // Continuacion de observacion probabilistica
+    // Continuation for probabilistic observation
     ObserveK(Addr),
 
-    // Descartar el ultimo valor evaluado del stack
+    // Discard the last value evaluated from the stack
     Discard,
 }
 
-// Mensaje devuelto por `resume()` cuando la maquina se pausa por un efecto o termina
+// Message returned by `resume()` when the machine pauses due to an effect or finishes
 #[derive(Debug)]
 pub enum Msg {
     Sample(Addr, Distribution, Machine),
@@ -82,8 +83,8 @@ impl Machine {
         }
     }
 
-    // clona el estado exacto de la maquina en un instante dado
-    // Es vital para SMC y SSMH
+    // Clones the machine's exact state at a given instant.
+    // This is essential for SMC and SSMH
     pub fn fork(&self) -> Self {
         self.clone()
     }

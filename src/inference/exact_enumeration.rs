@@ -1,8 +1,8 @@
 /*
 
-Módulo que implementa el algoritmo de inferencia Exact Enumeration (Enumeración Exacta).
-Este algoritmo explora exhaustivamente todas las ramificaciones posibles de un programa
-probabilístico con variables discretas finitas.
+Module that implements the Exact Enumeration inference algorithm.
+This algorithm exhaustively explores every possible branch of a
+probabilistic program with finite discrete variables.
 
 */
 
@@ -11,8 +11,8 @@ use crate::parser::distribution::Distribution;
 use crate::parser::value::RVal;
 use std::collections::{HashMap, VecDeque};
 
-// Función auxiliar matemática equivalente a `scipy.special.logsumexp` de Python.
-// Calcula log(exp(a) + exp(b)) de forma numéricamente estable.
+// Mathematical helper function equivalent to Python's `scipy.special.logsumexp`.
+// Computes log(exp(a) + exp(b)) in a numerically stable way.
 fn log_add_exp(a: f64, b: f64) -> f64 {
     let m = a.max(b);
     if m == f64::NEG_INFINITY {
@@ -22,7 +22,7 @@ fn log_add_exp(a: f64, b: f64) -> f64 {
     }
 }
 
-/// Ejecuta el algoritmo de Enumeración Exacta (exploración exhaustiva de trazas).s
+/// Runs the Exact Enumeration algorithm (exhaustive trace exploration).
 
 pub fn enumerate_traces(program: &str, max_states: usize) -> Result<Vec<(RVal, f64)>, String> {
     let mut stack_machines = vec![initial_machine(program)?];
@@ -52,7 +52,7 @@ pub fn enumerate_traces(program: &str, max_states: usize) -> Result<Vec<(RVal, f
             }
 
             Msg::Sample(_addr, dist, m_sam) => {
-                // Extraemos el soporte usando finite_support
+                // Extract the support using finite_support
 
                 let support = dist.finite_support()?;
 
@@ -72,24 +72,24 @@ pub fn enumerate_traces(program: &str, max_states: usize) -> Result<Vec<(RVal, f
     Ok(finished)
 }
 
-// Agrupa las ejecuciones que retornaron el mismo valor y normaliza sus probabilidades.
+// Groups runs that returned the same value and normalizes their probabilities.
 pub fn posterior_table(runs: &[(RVal, f64)]) -> (Vec<(RVal, f64, f64)>, f64) {
     let mut log_masses: HashMap<RVal, f64> = HashMap::new();
 
-    // Agregación eficiente O(N)
+    // Efficient O(N) aggregation
     for (val, lw) in runs {
         let entry = log_masses.entry(val.clone()).or_insert(f64::NEG_INFINITY);
         *entry = log_add_exp(*entry, *lw);
     }
 
-    // Z = logsumexp de todas las masas
+    // Z = logsumexp of all the masses
     let log_z = log_masses
         .values()
         .cloned()
         .fold(f64::NEG_INFINITY, log_add_exp);
 
-    // Convertimos el HashMap en un Vec para retornarlo ordenado o iterable
-    // La tupla es (Valor, ProbabilidadNormalizada, LogMass)
+    // Convert the HashMap into a Vec to return it sorted/iterable
+    // The tuple is (Value, NormalizedProbability, LogMass)
     let pmf: Vec<(RVal, f64, f64)> = log_masses
         .into_iter()
         .map(|(v, lw)| (v, (lw - log_z).exp(), lw))

@@ -1,6 +1,6 @@
 /*
 
-Modulo que implementa formateo de colores, headers, etc para la impresion por terminal.
+Module that implements color formatting, headers, etc. for terminal output.
 
 */
 
@@ -12,7 +12,7 @@ pub const RED: &str = "\x1b[31m";
 pub const YELLOW: &str = "\x1b[33m";
 
 pub fn pause() {
-    print!("\n   Presiona ENTER para continuar...");
+    print!("\n   Press ENTER to continue...");
     use std::io::{self, Write};
     io::stdout().flush().unwrap();
     let mut buffer = String::new();
@@ -32,7 +32,7 @@ pub fn print_err(msg: &str) {
 }
 
 pub fn print_warn(msg: &str) {
-    println!("   {YELLOW}[AVISO]{RESET} {msg}");
+    println!("   {YELLOW}[WARNING]{RESET} {msg}");
 }
 
 pub fn fmt_log_mass(log_mass: f64) -> String {

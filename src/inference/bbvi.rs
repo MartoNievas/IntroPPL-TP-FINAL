@@ -1,9 +1,9 @@
 /*
 
-Módulo que implementa el algoritmo Black-Box Variational Inference (BBVI).
-Convierte la inferencia en un problema de optimización, ajustando los parámetros
-de una distribución guía q(x; theta) para maximizar la ELBO (Evidence Lower Bound)
-utilizando el estimador de Score Function (REINFORCE).
+Module that implements the Black-Box Variational Inference (BBVI) algorithm.
+Turns inference into an optimization problem, adjusting the parameters of a
+guide distribution q(x; theta) to maximize the ELBO (Evidence Lower Bound)
+using the Score Function estimator (REINFORCE).
 
 */
 
@@ -15,14 +15,14 @@ use rand::prelude::*;
 use rand_distr::num_traits::{Float, Pow};
 
 
-/// Estructura interna para almacenar el resultado de una traza muestreada desde la guía.
+/// Internal structure to store the result of a trace sampled from the guide.
 struct SampleResult {
     pub val: RVal,
     pub elbo_sample: f64,
     pub scores: HashMap<Addr, Vec<f64>>,
 }
 
-// Optimizacion Adam para ascenso de gradiente (maximizar el ELBO)
+// Adam optimizer for gradient ascent (maximizing the ELBO)
 struct AdamOptimizer {
     m: HashMap<Addr, Vec<f64>>,
     v: HashMap<Addr, Vec<f64>>,
@@ -34,13 +34,13 @@ struct AdamOptimizer {
 }
 
 
-// Ejecuta el algoritmo Black-Box Variational Inference.
-// Retorna el historial de convergencia de la ELBO y los parámetros variacionales optimizados θ.
+// Runs the Black-Box Variational Inference algorithm.
+// Returns the ELBO convergence history and the optimized variational parameters θ.
 pub fn run_bbvi<R: Rng + ?Sized>(
     program: &str,
     steps: usize,
-    n_samples: usize, // Muestras por paso de gradiente para reducir varianza (e.g., 10 a 20)
-    lr: f64,          // Tasa de aprendizaje para Adam (e.g., 0.05)
+    n_samples: usize, // Samples per gradient step to reduce variance (e.g., 10 to 20)
+    lr: f64,          // Learning rate for Adam (e.g., 0.05)
     rng: &mut R,
 ) -> Result<(Vec<f64>, HashMap<Addr, Vec<f64>>), String> {
     if n_samples == 0 {
@@ -57,22 +57,22 @@ pub fn run_bbvi<R: Rng + ?Sized>(
         let mut step_elbos = Vec::with_capacity(n_samples);
         let mut step_scores = Vec::with_capacity(n_samples);
 
-        // Recolectamos N trazas independientes muestreando de las guías actuales
+        // Collect N independent traces by sampling from the current guides
         for _ in 0..n_samples {
             let res = run_bbvi_sample(base_m.fork(), &mut guides, &mut theta, rng)?;
             step_elbos.push(res.elbo_sample);
             step_scores.push(res.scores);
         }
 
-        // Calculamos la ELBO media del lote (la cota que queremos maximizar)
+        // Compute the batch mean ELBO (the bound we want to maximize)
         let mean_elbo: f64 = step_elbos.iter().sum::<f64>() / (n_samples as f64);
         elbo_history.push(mean_elbo);
 
-        // Reducción de varianza (Baseline): Usamos la ELBO media como control variate 'b'
+        // Variance reduction (baseline): use the mean ELBO as control variate 'b'
         let mut grad_accum: HashMap<Addr, Vec<f64>> = HashMap::new();
 
         for (elbo_i, scores_i) in step_elbos.iter().zip(step_scores.iter()) {
-            // Recompensa centrada: (w_i - b) reduce drásticamente el ruido del gradiente
+            // Centered reward: (w_i - b) drastically reduces gradient noise
             let reward = elbo_i - mean_elbo;
 
             for (addr, grad_i) in scores_i {
@@ -85,7 +85,7 @@ pub fn run_bbvi<R: Rng + ?Sized>(
             }
         }
 
-        // Actualizamos los parámetros θ usando Adam
+        // Update the θ parameters using Adam
         optimizer.step(&mut theta, &grad_accum);
     }
 
@@ -105,12 +105,12 @@ impl AdamOptimizer {
         }
     }
 
-    // Realiza un paso de ascendo de gradiente (theta_new = theta_old + lr * Adam(∇ELBO)).
+    // Performs a gradient ascent step (theta_new = theta_old + lr * Adam(∇ELBO)).
     fn step(&mut self, theta: &mut HashMap<Addr, Vec<f64>>, grads: &HashMap<Addr, Vec<f64>>) {
         self.t += 1;
         let t_f64 = self.t as f64;
 
-        // Corregimos el sesgo
+        // Bias correction
         let lr_t = self.lr * ((1.0 - self.beta2.powf(t_f64)).sqrt()) / (1.0 - self.beta1.pow(t_f64));
 
         for (addr, grad) in grads {
@@ -128,7 +128,7 @@ impl AdamOptimizer {
                 v_vec[k] = self.beta2 * v_vec[k] + (1.0 - self.beta2) * g * g;
 
 
-                // Aqui hacemos el ascenso de grandiente
+                // Here we perform the gradient ascent step
                 params[k] += lr_t * m_vec[k] / (v_vec[k].sqrt() + self.eps);
             }
 
@@ -139,7 +139,7 @@ impl AdamOptimizer {
 }
 
 
-// Ejecuta una sola trayectoria del programa muestreando de las distribuciones guia q(x, theta)
+// Runs a single trajectory of the program, sampling from the guide distributions q(x, theta)
 fn run_bbvi_sample<R: Rng + ?Sized> (
     mut m: Machine,
     guides: &mut HashMap<Addr, Distribution>,
@@ -167,20 +167,20 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
                 let guide_template = guides.get(&addr).unwrap();
                 let current_params = theta.get(&addr).unwrap();
 
-                // Instanciamos q(x, theta) con los parametros actuales
+                // Instantiate q(x, theta) with the current parameters
 
                 let guide_dist = guide_template.with_params(current_params).ok_or_else(|| {
                     format!("BBVI Error: Failed to instantiate varational guide distribution '{}' with parameters '{:?}' at address '{:?}'",guide_template.name(), current_params, addr)
                 })?;
 
-                // Ahora muestreamos de la GUIA q(x, theta), NO del prior
+                // Now we sample from the GUIDE q(x, theta), NOT from the prior
                 let x = guide_dist.sample(rng);
 
-                // Acumulamos probabilidades logaritmicas para el calculo del ELBO
+                // Accumulate log-probabilities for the ELBO computation
                 log_p += prior_dist.log_prob(&x);
                 log_q += guide_dist.log_prob(&x);
 
-                // Calculamos el gradiente de la Score Function: ∇θ log q(x; θ)
+                // Compute the Score Function gradient: ∇θ log q(x; θ)
                 if let Some(grad) = guide_dist.grad_log_prob(&x) {
                     scores.insert(addr.clone(), grad);
                 } else {
@@ -199,7 +199,7 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
             }
 
             Msg::Done(val, _finish_machine) => {
-                // ELBO para esta muestra: log p(x, y) - log q(x)
+                // ELBO for this sample: log p(x, y) - log q(x)
                 let elbo_sample = log_p - log_q;
                 return Ok(SampleResult {
                     val,

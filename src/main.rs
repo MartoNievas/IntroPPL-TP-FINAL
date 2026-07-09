@@ -1,19 +1,20 @@
 /*
 
-Módulo de entrada del programa, para ejecución de una demostración o ejecución de archivos de codigo del hoppl.
-Con los siguientes modos de uso:
+Program entry point module, for running a demonstration or running HOPPL
+code files.
+With the following usage modes:
 
-    - Modo demostracion: cargo run -> corre la demo entera | cargo run -- <num_demo> -> corre demo especifica.
-    - Ejecución determinística: cargo run -- <archivo.hoppl> -> corre un programa sin 'sample'/'observe'.
-    - Ejecución de código hoppl probabilístico: cargo run -- <archivo.hoppl> <algoritmo de inferencia>.
+    - Demo mode: cargo run -> runs the full demo | cargo run -- <demo_number> -> runs a specific demo.
+    - Deterministic execution: cargo run -- <file.hoppl> -> runs a program without 'sample'/'observe'.
+    - Probabilistic HOPPL code execution: cargo run -- <file.hoppl> <inference algorithm>.
 
-    numero de demos = 6
-    algoritmos de inferencia:
+    number of demos = 6
+    inference algorithms:
         - lw
         - ssmh
         - smc
         - bbvi
-        - exact numeration
+        - exact enumeration
 
 */
 
@@ -31,8 +32,8 @@ use std::env;
 use cli::Config;
 
 fn main() {
-    println!("Iniciando Demostracion: HOPPL (Higher-Order Probabilistic Programming Language)");
-    println!("Autor: Martin Nievas Wilberger");
+    println!("Starting Demonstration: HOPPL (Higher-Order Probabilistic Programming Language)");
+    println!("Author: Martín Nievas Wilberger");
 
     let args: Vec<String> = env::args().collect();
     let config = Config::parse_args(args);

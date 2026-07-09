@@ -1,12 +1,12 @@
 /*
 
-Objeto tipo distribución, que contiene la información de la distribución de un conjunto de datos.
+Distribution-type object, which holds the information for a data set's distribution.
 
-Todas las distrbuciones soportan las operaciones:
-    - sample: devuelve un valor aleatorio de la distribución
-    - log-prob: devuelve el logaritmo de la probabilidad de un valor dado
+All distributions support the operations:
+    - sample: returns a random value drawn from the distribution
+    - log-prob: returns the log-probability of a given value
 
-Algunas soportan make_guide / params / with_params / grad_log_prob para inferncia bbvi.
+Some also support make_guide / params / with_params / grad_log_prob for BBVI inference.
 
 */
 
@@ -18,7 +18,7 @@ use rand_distr::Distribution as RandDistribution;
 use rand_distr::{
     Bernoulli as RBernoulli,
     Beta as RBeta,
-    Exp as RExp, // con el enum `Distribution`
+    Exp as RExp, // with the `Distribution` enum
     Gamma as RGamma,
     LogNormal as RLogNormal,
     Normal as RNormal,
@@ -29,7 +29,7 @@ use rand_distr::{
 };
 use statrs::function::gamma::ln_gamma as lgamma;
 
-// Definición de constante en Rust
+// Constant definition in Rust
 const LOG2PI: f64 = 1.8378770664093453;
 
 #[derive(Debug, Clone)]
@@ -39,15 +39,15 @@ pub enum Distribution {
     Uniform { a: f64, b: f64 }, // uniform-continuous
     Exponential { rate: f64 },
     Beta { alpha: f64, beta: f64 },
-    Gamma { shape: f64, rate: f64 }, // shape/rate, como en el libro
+    Gamma { shape: f64, rate: f64 }, // shape/rate, as in the book
     Poisson { lam: f64 },
     Bernoulli { p: f64 },                 // "flip"
-    Discrete { probs: Vec<f64> },         // categorical sobre {0..K-1}, ya normalizado
-    UniformDiscrete { lo: i64, hi: i64 }, // enteros en [lo, hi)
+    Discrete { probs: Vec<f64> },         // categorical over {0..K-1}, already normalized
+    UniformDiscrete { lo: i64, hi: i64 }, // integers in [lo, hi)
     Dirichlet { alphas: Vec<f64> },
 }
 
-// Tabla de constructores de distribuciones (Nombre primitivos visibles)
+// Table of distribution constructors (visible primitive names)
 pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, String> {
     match name {
         "normal" => Distribution::normal(args[0], args[1]),
@@ -65,14 +65,14 @@ pub fn make_distribution(name: &str, args: &[f64]) -> Result<Distribution, Strin
     }
 }
 
-// Guide variacional optimizable con el mismo soporte que `d` (BBVI).
+// Optimizable variational guide with the same support as `d` (BBVI).
 pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
     match d {
         Distribution::Normal { mu, sigma } => Distribution::normal(*mu, *sigma),
         Distribution::LogNormal { mu, sigma } => Distribution::log_normal(*mu, *sigma),
         Distribution::Gamma { .. }
         | Distribution::Exponential { .. }  => {
-            // soporte positivo ilimitado -> inicialización tipo log-normal
+            // unbounded positive support -> log-normal-style initialization
             Distribution::log_normal(0.0, 1.0)
         }
         Distribution::Bernoulli { p } => Distribution::bernoulli(*p),
@@ -84,7 +84,7 @@ pub fn make_guide(d: &Distribution) -> Result<Distribution, String> {
     }
 }
 
-// --- repr legible, equivalente a __repr__ del Python ----------------------
+// --- readable repr, equivalent to Python's __repr__ ------------------------
 
 impl std::fmt::Display for Distribution {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -106,7 +106,7 @@ impl std::fmt::Display for Distribution {
 }
 
 // ---------------------------------------------------------------------------
-// Distribuciones y sus operaciones: sample, log_prob, params, with_params, grad_log_prob
+// Distributions and their operations: sample, log_prob, params, with_params, grad_log_prob
 // ---------------------------------------------------------------------------
 
 impl Distribution {
@@ -198,7 +198,7 @@ impl Distribution {
     }
 }
 
-// Nombres de primitivos de distribuciones, para mostrar en errores y logs
+// Distribution primitive names, used for display in errors and logs
 impl Distribution {
     pub fn name(&self) -> &'static str {
         match self {
@@ -220,7 +220,7 @@ impl Distribution {
 // SAMPLES:
 
 impl Distribution {
-    // samples un valor aleatorio de la distribución, usando un generador de números aleatorios `rng`.
+    // Samples a random value from the distribution, using an `rng` random number generator.
     pub fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> RVal {
         match self {
             Distribution::Normal { mu, sigma } => {
@@ -377,7 +377,7 @@ impl Distribution {
                 }
             }
             (Distribution::Dirichlet { alphas }, RVal::List(x_vec)) => {
-                // Extraer f64 de cada RVal::Float
+                // Extract f64 from each RVal::Float
                 let xs: Vec<f64> = match x_vec
                     .iter()
                     .map(|v| match v {
@@ -410,10 +410,11 @@ impl Distribution {
     }
 }
 
-// --- interfaz de "guide" para BBVI (params / with_params / grad_log_prob) --
+// --- "guide" interface for BBVI (params / with_params / grad_log_prob) -----
 
 impl Distribution {
-    // Funcion que devuelve los parámetros de la distribución como un List de f64, si es aplicable. Para distribuciones que no tienen parámetros (como Bernoulli con p fijo), devuelve None.
+    // Returns the distribution's parameters as a List of f64, if applicable. For
+    // distributions that have no parameters (like Bernoulli with a fixed p), returns None.
     pub fn params(&self) -> Option<Vec<f64>> {
         match self {
             Distribution::Normal { mu, sigma } => Some(vec![*mu, sigma.ln()]),
@@ -425,11 +426,11 @@ impl Distribution {
             Distribution::Discrete { probs } => {
                 Some(probs.iter().map(|&p| p.max(1e-12).ln()).collect())
             }
-            _ => None, // otras distribuciones no tienen parámetros continuos
+            _ => None, // other distributions have no continuous parameters
         }
     }
 
-    // Nueva instancia a partir de un List de parámetros no restringidos.
+    // New instance built from a List of unconstrained parameters.
     pub fn with_params(&self, theta: &[f64]) -> Option<Distribution> {
         match self {
             Distribution::Normal { .. } => Some(Distribution::Normal {
@@ -450,7 +451,7 @@ impl Distribution {
         }
     }
 
-    // Gradiente de log_prob(x) respecto de los parámetros no restringidos.
+    // Gradient of log_prob(x) with respect to the unconstrained parameters.
     pub fn grad_log_prob(&self, x: &RVal) -> Option<Vec<f64>> {
         match (self, x) {
             (Distribution::Normal { mu, sigma }, RVal::Float(x)) => {
@@ -483,12 +484,12 @@ impl Distribution {
 
 /**
     
-    Funcion auxiliar para soporte finito en Exact Enumeration, la implemento en el modulo
-    de distribuciones porque es donde mas sentido tiene
+    Helper function for finite support in Exact Enumeration. It lives in the
+    distribution module because that's where it makes the most sense.
 
-    Una distribucion debe cumplir con 2 propiedades para que tenga soporte finito:
-        1. Tiene que ser discreta, es decir que sus valores van a "saltos" como los numeros enteros
-        2. Y que tenga una cantidad de valores finitos posibles.
+    A distribution must satisfy 2 properties for it to have finite support:
+        1. It must be discrete, i.e. its values move in "jumps" like integers.
+        2. It must have a finite number of possible values.
 
  */
 

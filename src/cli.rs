@@ -1,6 +1,8 @@
 /*
 
-
+Modulo dedicado al parser de argumentos que se ingresan por la entrada estandar para decididr el modo
+de ejecucion del programa.
+Ademas tambien parsea el algoritmo de inferncia a usar en el modo archivo probabilistico.
 
 */
 use crate::demos::{build_demos, Demo};

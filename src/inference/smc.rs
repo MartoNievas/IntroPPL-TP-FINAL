@@ -1,6 +1,18 @@
 /*
 
-Modulo que implemente el algoritmo de inferencia Secuancial Monte Carlo, Aqui es donde brilla el objeto Machine ya que mantenemos una poblacion de N maquinas (Vec<Machine>)
+Module that implements the Sequential Monte Carlo (SMC) inference algorithm, also
+known as a particle filter. Instead of running one trace at a time, SMC advances a
+whole population of N particles (Vec<Machine>) in lockstep: each particle runs until
+it hits the next 'observe', the population is reweighted by the resulting likelihoods,
+and particles are then resampled proportionally to their weight before continuing.
+This is where the `Machine` abstraction really shines, since forking a particle's
+state is just a cheap memory clone.
+
+Because every particle must reach the same sequence of 'observe' statements at the
+same time, this module also performs a static safety check on the program's AST
+before running: it rejects models where an 'observe' could occur in a
+non-deterministic position (e.g. inside an 'if' branch or a function body), since
+that would desynchronize the particle population at runtime.
 
 */
 
@@ -10,30 +22,30 @@ use rand::prelude::*;
 use crate::parser::sexpr::Form;
 use crate::parser::sexpr::parse;
 
-/// Ejecuta el algoritmo Sequential Monte Carlo con N partículas.
+/// Runs the Sequential Monte Carlo algorithm with N particles.
 pub fn run_smc<R: Rng + ?Sized>(
     program: &str,
     n_particles: usize,
     rng: &mut R,
 ) -> Result<Vec<RVal>, String> {
-    // Aqui hacemos las verificaciones estaticas del AST
+    // Perform the static checks on the AST here
     let forms = parse(program)?;
 
-    // Verificamos las formas
+    // Check the forms
     check_scm_safety(&forms)?;
 
 
-    // Parseamos el AST una sola vez y lo inicializamos en la máquina base
+    // Parse the AST once and initialize it on the base machine
     let base_m = initial_machine(program)?;
 
-    // 1. Inicializamos las N partículas usando la clonación ultrarrápida de memoria
+    // 1. Initialize the N particles using ultra-fast memory cloning
     let mut particles: Vec<Machine> = Vec::with_capacity(n_particles);
     for _ in 0..n_particles {
         particles.push(base_m.fork());
     }
 
     loop {
-        // 2. Avanzar todas las partículas hasta su próximo punto de sincronización
+        // 2. Advance all particles until their next synchronization point
         let mut messages = Vec::with_capacity(n_particles);
         
         
@@ -41,7 +53,7 @@ pub fn run_smc<R: Rng + ?Sized>(
             messages.push(advance_until_sync(p, rng)?);
         }
 
-        // 3. Si todas las partículas terminaron el programa, devolvemos los resultados
+        // 3. If all particles finished the program, return the results
         if messages.iter().all(|msg| matches!(msg, Msg::Done(_, _))) {
             return Ok(messages
                 .into_iter()
@@ -49,7 +61,7 @@ pub fn run_smc<R: Rng + ?Sized>(
                 .collect());
         }
 
-        // 4. Procesar el paso de observación
+        // 4. Process the observation step
         let mut log_increments = Vec::with_capacity(n_particles);
         let mut paused_machines = Vec::with_capacity(n_particles);
 
@@ -62,16 +74,16 @@ pub fn run_smc<R: Rng + ?Sized>(
                     m.log_w += lp;
                     log_increments.push(lp);
 
-                    // Inyectamos el valor observado para que la máquina pueda continuar
+                    // Inject the observed value so the machine can continue
                     send(&mut m, y_obs);
                     paused_machines.push(m);
                 }
-                // Deteccion de desincronización dinamico en tiempo de ejecucion
+                // Dynamic runtime detection of desynchronization
                 _ => return Err("SMC Desynchronization Error: Particles reached divergent execution states. All particles in Sequential Monte Carlo must encounter the exact same sequence of 'observe' statements.".into()),
             }
         }
 
-        // 5. Normalización Softmax numéricamente estable
+        // 5. Numerically stable softmax normalization
         let max_lp = log_increments
             .iter()
             .cloned()
@@ -85,18 +97,18 @@ pub fn run_smc<R: Rng + ?Sized>(
         let sum_w: f64 = weights.iter().sum();
         let probs: Vec<f64> = weights.iter().map(|w| w / sum_w).collect();
 
-        // 6. Re-muestreo multinomial
+        // 6. Multinomial resampling
         let mut new_particles = Vec::with_capacity(n_particles);
         for _ in 0..n_particles {
             let parent_idx = sample_categorical(&probs, rng);
-            // Aquí sí es legítimo e indispensable usar .fork() para duplicar las ganadoras
+            // Here it's legitimate and necessary to use .fork() to duplicate the winners
             new_particles.push(paused_machines[parent_idx].fork());
         }
         particles = new_particles;
     }
 }
 
-// Funcion auxiliar para el analisis estatico del AST para detectar desincronizacion en el algortimo SCM
+// Helper function for the static AST analysis that detects desynchronization in the SMC algorithm
 fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
 
     for form in forms {
@@ -105,8 +117,8 @@ fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
     Ok(())
 }
 
-// Funcion recursiva que retorna true si la forma contiene al menos un `observe`
-// Falla si encuentra un `observe` en un lugar estructuralmente peligroso
+// Recursive function that returns true if the form contains at least one `observe`.
+// Fails if it finds an `observe` in a structurally unsafe position
 fn check_form(form: &Form) -> Result<bool, String> {
     match form {
         Form::Int(_) | Form::Float(_) | Form::Bool(_) | Form::Str(_) | Form::Nil | Form::Symbol(_) => {
@@ -121,11 +133,11 @@ fn check_form(form: &Form) -> Result<bool, String> {
             if let Form::Symbol(head) = &list[0] {
                 match head.as_str() {
                     "observe" => {
-                        // Verificamos los argumentos por si tienen observes anidados
+                        // Check the arguments in case they contain nested observes
                         for arg in &list[1..] {
                             check_form(arg)?;
                         }
-                        Ok(true) // Notificamos hacia arriba que encontramos un observe
+                        Ok(true) // Report upward that we found an observe
                     }
                     
                     "if" => {
@@ -170,11 +182,11 @@ fn check_form(form: &Form) -> Result<bool, String> {
                         if list.len() >= 3 {
                             if let Form::List(binds, _list_type) = &list[1] {
                                 let mut has_obs = false;
-                                // Revisamos las expresiones asignadas a las variables
+                                // Check the expressions assigned to the variables
                                 for i in (1..binds.len()).step_by(2) {
                                     has_obs |= check_form(&binds[i])?;
                                 }
-                                // Revisamos el cuerpo del let
+                                // Check the body of the let
                                 for expr in &list[2..] {
                                     has_obs |= check_form(expr)?;
                                 }
@@ -185,7 +197,7 @@ fn check_form(form: &Form) -> Result<bool, String> {
                     }
                     
                     _ => {
-                        // Llamada estándar. Verificamos sus argumentos.
+                        // Standard call. Check its arguments.
                         let mut has_obs = false;
                         for arg in list {
                             has_obs |= check_form(arg)?;
@@ -194,7 +206,7 @@ fn check_form(form: &Form) -> Result<bool, String> {
                     }
                 }
             } else {
-                // Si el primer elemento no es un símbolo, revisamos toda la lista
+                // If the first element is not a symbol, check the whole list
                 let mut has_obs = false;
                 for arg in list {
                     has_obs |= check_form(arg)?;
@@ -207,24 +219,24 @@ fn check_form(form: &Form) -> Result<bool, String> {
 
 
 
-// Función auxiliar para avanzar hasta el próximo 'Observe' o hasta que termine el programa.
-// Los samples intermedios se resuelven automáticamente muestreando el prior.
+// Helper function to advance until the next 'Observe' or until the program finishes.
+// Intermediate samples are resolved automatically by sampling from the prior.
 fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Msg, String> {
     loop {
         match resume(m)? {
             Msg::Sample(_addr, dist, mut next_m) => {
-                // Muestreamos de la distribución prior
+                // Sample from the prior distribution
                 let sample_val = dist.sample(rng);
                 send(&mut next_m, sample_val);
                 m = next_m;
             }
-            // Al encontrarnos un Observe o Done, devolvemos el mensaje al controlador 
+            // Once we hit an Observe or Done, return the message to the controller
             other => return Ok(other),
         }
     }
 }
 
-// Función auxiliar para re-muestreo: selecciona un índice según sus probabilidades categóricas.
+// Helper function for resampling: selects an index according to its categorical probabilities.
 fn sample_categorical<R: Rng + ?Sized>(probs: &[f64], rng: &mut R) -> usize {
     let u: f64 = rng.random();
     let mut cumsum = 0.0;

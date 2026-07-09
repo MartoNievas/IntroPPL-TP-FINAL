@@ -1,23 +1,23 @@
 /*
 
-Modulo de estadistica y diagnosticos de inferencia.
+Statistics and inference diagnostics module.
 
-Toma la salida cruda de los motores de inferencia (valores `RVal`, pesos
-de importancia, cadenas MCMC) y calcula las metricas resumen: media,
-error estandar, Effective Sample Size (ESS) y, para MCMC, ESS corregido
-por autocorrelacion (tiempo integrado de autocorrelacion).
+Takes the raw output from the inference engines (`RVal` values, importance
+weights, MCMC chains) and computes the summary metrics: mean, standard
+error, Effective Sample Size (ESS), and, for MCMC, ESS corrected for
+autocorrelation (integrated autocorrelation time).
 
-No conoce CLI, parsing HOPPL, ni formato de salida: recibe vectores de
-valores y devuelve numeros o distribuciones de frecuencia. Si el modelo
-retorna un valor no numerico (ej. un string), cae a un resumen categorico
-en vez de fallar.
+It knows nothing about the CLI, HOPPL parsing, or output formatting: it
+receives vectors of values and returns numbers or frequency distributions.
+If the model returns a non-numeric value (e.g. a string), it falls back to
+a categorical summary instead of failing.
 
-Casos cubiertos:
-    - LW: media/varianza ponderada, ESS por pesos de importancia.
-    - SMC: media y error estandar muestral (sin pesos).
-    - SSMH (MCMC): media, error estandar y ESS ajustado por autocorrelacion.
-    - Resultados no numericos: distribucion de frecuencia categorica,
-      ponderada o no.
+Cases covered:
+    - LW: weighted mean/variance, ESS from importance weights.
+    - SMC: sample mean and standard error (unweighted).
+    - SSMH (MCMC): mean, standard error, and ESS adjusted for autocorrelation.
+    - Non-numeric results: categorical frequency distribution, weighted
+      or unweighted.
 
 */
 
@@ -26,11 +26,11 @@ use std::collections::HashMap;
 
 use crate::ui::print_ok;
 
-pub fn as_f64(val: &RVal) -> f64 {
+pub fn as_f64(val: &RVal) -> Result<f64,String> {
     match val {
-        RVal::Float(f) => *f,
-        RVal::Int(i) => *i as f64,
-        _ => panic!("Se esperaba un valor numerico, se obtuvo: {val:?}"),
+        RVal::Float(f) => Ok(*f),
+        RVal::Int(i) => Ok(*i as f64),
+        _ => Err(format!("Expected a numeric value, got: {:?}",val)),
     }
 }
 
@@ -45,7 +45,7 @@ pub fn print_categorical_weighted(vals: &[RVal], weights: &[f64]) {
     }
     let mut entries: Vec<(String, f64)> = mass.into_iter().collect();
     entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    print_ok("Resultado no numerico: distribucion posterior estimada (por peso):");
+    print_ok("Non-numeric result: estimated posterior distribution (by weight):");
     for (val, p) in entries {
         println!("      {val}: {:.4}", p);
     }
@@ -59,7 +59,7 @@ pub fn print_categorical_unweighted(vals: &[RVal]) {
     }
     let mut entries: Vec<(String, usize)> = counts.into_iter().collect();
     entries.sort_by(|a, b| b.1.cmp(&a.1));
-    print_ok("Resultado no numerico: distribucion posterior estimada (frecuencia):");
+    print_ok("Non-numeric result: estimated posterior distribution (frequency):");
     for (val, c) in entries {
         println!("      {val}: {:.4} ({c}/{n})", c as f64 / n);
     }
@@ -69,12 +69,12 @@ pub fn weighted_mean_var(vals: &[RVal], weights: &[f64]) -> (f64, f64) {
     let mean: f64 = vals
         .iter()
         .zip(weights.iter())
-        .map(|(v, w)| as_f64(v) * w)
+        .map(|(v, w)| as_f64(v).unwrap() * w)
         .sum();
     let var: f64 = vals
         .iter()
         .zip(weights.iter())
-        .map(|(v, w)| w * (as_f64(v) - mean).powi(2))
+        .map(|(v, w)| w * (as_f64(v).unwrap() - mean).powi(2))
         .sum();
     (mean, var)
 }
@@ -86,8 +86,8 @@ pub fn effective_sample_size(weights: &[f64]) -> f64 {
 
 pub fn sample_mean_std_err(vals: &[RVal]) -> (f64, f64) {
     let n = vals.len() as f64;
-    let mean: f64 = vals.iter().map(as_f64).sum::<f64>() / n;
-    let var: f64 = vals.iter().map(|x| (as_f64(x) - mean).powi(2)).sum::<f64>() / n;
+    let mean: f64 = vals.iter().map(as_f64).map(|val| val.unwrap()).sum::<f64>() / n;
+    let var: f64 = vals.iter().map(|x| (as_f64(x).unwrap() - mean).powi(2)).sum::<f64>() / n;
     let std_err = (var / n).sqrt();
     (mean, std_err)
 }
@@ -125,7 +125,7 @@ fn integrated_autocorr_time(rhos: &[f64]) -> f64 {
 }
 
 pub fn mcmc_mean_std_err_ess(chain: &[RVal]) -> (f64, f64, f64) {
-    let xs: Vec<f64> = chain.iter().map(as_f64).collect();
+    let xs: Vec<f64> = chain.iter().map(as_f64).map(|val| val.unwrap()).collect();
     let n = xs.len();
     let mean: f64 = xs.iter().sum::<f64>() / n as f64;
     let var: f64 = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
@@ -161,19 +161,19 @@ mod tests {
 
     #[test]
     fn as_f64_bool_mapping() {
-        assert_eq!(as_f64(&RVal::Bool(true)), 1.0);
-        assert_eq!(as_f64(&RVal::Bool(false)), 0.0);
+        assert_eq!(as_f64(&RVal::Bool(true)), Err("Expected a numeric value, got: Bool(true)".into()));
+        assert_eq!(as_f64(&RVal::Bool(false)), Err("Expected a numeric value, got: Bool(false)".into()));
     }
 
     #[test]
     fn is_numeric_rejects_str() {
-        assert!(!is_numeric(&RVal::Str("grande".to_string())));
+        assert!(!is_numeric(&RVal::Str("large".to_string())));
         assert!(is_numeric(&RVal::Int(3)));
     }
 
     #[test]
     fn mcmc_diag_no_autocorrelation_matches_iid_var() {
-        // Cadena constante: varianza 0, se toma el camino corto (n < 4 o var == 0).
+        // Constant chain: variance 0, takes the short path (n < 4 or var == 0).
         let chain: Vec<RVal> = vec![RVal::Float(2.0); 10];
         let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
         assert!((mean - 2.0).abs() < 1e-9);
