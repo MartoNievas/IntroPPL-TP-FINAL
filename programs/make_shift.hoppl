@@ -2,5 +2,5 @@
 ; make-shift devuelve una funcion que recuerda su mu; (f 3) con mu=10 da 13
 (let [make-shift (fn [mu]
                    (fn [x] (+ x mu)))
-      f (make-shift 10.0)]
-  (f 3.0))
+      f (make-shift 10)]
+  (f 3))
