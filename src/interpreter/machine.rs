@@ -53,6 +53,11 @@ pub enum Instr {
     // Continuation for probabilistic observation
     ObserveK(Addr),
 
+    // Continuation for soft conditioning via the `factor` operator:
+    // adds a term directly to the accumulated log-weight instead of
+    // pausing the machine for the inference engine to intervene.
+    FactorK(Addr),
+
     // Discard the last value evaluated from the stack
     Discard,
 }

@@ -9,6 +9,7 @@ use super::machine::{Machine, Instr, Msg, Env, Addr, Closure};
 use crate::parser::sexpr::Form;
 use crate::parser::primitives::{is_primitive, make_primitives};
 use crate::parser::value::RVal;
+use crate::stats::as_f64;
 
 // Executes instructions from the control stack until it encounters a probabilistic effect
 pub fn resume(mut m: Machine) -> Result<Msg, String> {
@@ -130,6 +131,18 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                                     m.c.push(Instr::Eval(list[2].clone(), env.clone(), v_addr));
                                     m.c.push(Instr::Eval(list[1].clone(), env.clone(), d_addr));
                                 }
+                                
+                                "factor" => {
+                                    if list.len() != 2 {
+                                        return Err("Invalid 'factor' syntax: expected exactly 1 argument".into());
+                                    }
+
+                                    let mut v_addr = addr.clone();
+                                    v_addr.push("v".into());
+
+                                    m.c.push(Instr::FactorK(addr));
+                                    m.c.push(Instr::Eval(list[1].clone(), env.clone(), v_addr));
+                                }
 
                                 _ => {
                                     // Standard call to a function or primitive: (f arg1 arg2 ...)
@@ -250,6 +263,14 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                 } else {
                     return Err("Type error: first argument to 'observe' must evaluate to a Distribution object".into());
                 }
+            }
+
+            Instr::FactorK(addr) => {
+                let val = m.v.pop().ok_or("Missing value on the value stack while evaluating FactorK continuation")?;
+                let w = as_f64(&val)?;
+
+                m.log_w += w;
+                m.v.push(RVal::Nil);
             }
 
             Instr::Discard => {

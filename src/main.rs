@@ -18,24 +18,13 @@ With the following usage modes:
 
 */
 
-mod cli;
-mod demos;
-mod inference;
-mod interpreter;
-mod parser;
-mod runner;
-mod stats;
-mod ui;
-
 use std::env;
-
-use cli::Config;
 
 fn main() {
     println!("Starting Demonstration: HOPPL (Higher-Order Probabilistic Programming Language)");
     println!("Author: Martín Nievas Wilberger");
 
     let args: Vec<String> = env::args().collect();
-    let config = Config::parse_args(args);
-    runner::run(config);
+    let config = ppl_tp_final::cli::Config::parse_args(args);
+    ppl_tp_final::runner::run(config);
 }

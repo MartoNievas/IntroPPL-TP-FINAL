@@ -15,11 +15,11 @@ use std::time::Instant;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use ppl_tp_final::inference::bbvi::run_bbvi;
-use ppl_tp_final::inference::exact_enumeration::{enumerate_traces, posterior_table};
-use ppl_tp_final::inference::lw::likelihood_weighting;
-use ppl_tp_final::inference::smc::run_smc;
-use ppl_tp_final::inference::ssmh::single_site_mh;
+use crate::inference::bbvi::run_bbvi;
+use crate::inference::exact_enumeration::{enumerate_traces, posterior_table};
+use crate::inference::lw::likelihood_weighting;
+use crate::inference::smc::run_smc;
+use crate::inference::ssmh::single_site_mh;
 
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 

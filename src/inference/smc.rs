@@ -45,34 +45,83 @@ pub fn run_smc<R: Rng + ?Sized>(
     }
 
     loop {
-        // 2. Advance all particles until their next synchronization point
+        // 2. Advance all particles until their next synchronization point.
+        // We record each particle's log_w *before* advancing, so we can
+        // later recover exactly how much weight it picked up between syncs
+        // (factor calls included, not just the observe at the sync point).
+        let mut log_w_starts = Vec::with_capacity(n_particles);
         let mut messages = Vec::with_capacity(n_particles);
-        
-        
+
         for p in particles.into_iter() {
+            log_w_starts.push(p.log_w);
             messages.push(advance_until_sync(p, rng)?);
         }
 
-        // 3. If all particles finished the program, return the results
+        // 3. If all particles finished the program, they still may have
+        // picked up weight from a `factor` call after the last `observe`
+        // (or, for factor-only models, throughout the entire run) that was
+        // never accounted for, since `factor` never pauses the machine and
+        // therefore never triggers the reweighting step below. We recover
+        // that contribution here with one last importance-weighted
+        // resampling pass over the log_w delta since the last sync point.
         if messages.iter().all(|msg| matches!(msg, Msg::Done(_, _))) {
-            return Ok(messages
-                .into_iter()
-                .map(|msg| if let Msg::Done(val, _) = msg { val } else { unreachable!() })
-                .collect());
+            let mut log_increments = Vec::with_capacity(n_particles);
+            let mut finished = Vec::with_capacity(n_particles);
+
+            for (msg, log_w_start) in messages.into_iter().zip(log_w_starts.into_iter()) {
+                if let Msg::Done(val, m) = msg {
+                    log_increments.push(m.log_w - log_w_start);
+                    finished.push(val);
+                }
+            }
+
+            // If nothing changed since the last sync point (the common
+            // case: a model that ends right after an observe, with no
+            // trailing factor), skip the extra resampling pass entirely --
+            // it would only add unnecessary variance to models that were
+            // already correct.
+            if log_increments.iter().all(|&w| w == 0.0) {
+                return Ok(finished);
+            }
+
+            let max_lp = log_increments
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let weights: Vec<f64> = log_increments
+                .iter()
+                .map(|&w| (w - max_lp).exp())
+                .collect();
+            let sum_w: f64 = weights.iter().sum();
+            let probs: Vec<f64> = weights.iter().map(|w| w / sum_w).collect();
+
+            let mut resampled = Vec::with_capacity(n_particles);
+            for _ in 0..n_particles {
+                let parent_idx = sample_categorical(&probs, rng);
+                resampled.push(finished[parent_idx].clone());
+            }
+            return Ok(resampled);
         }
 
         // 4. Process the observation step
         let mut log_increments = Vec::with_capacity(n_particles);
         let mut paused_machines = Vec::with_capacity(n_particles);
 
-        for msg in messages {
+        for (msg, log_w_start) in messages.into_iter().zip(log_w_starts.into_iter()) {
             match msg {
                 Msg::Observe(_addr, dist, y_obs, mut m) => {
-                    
+
                     let lp = dist.log_prob(&y_obs);
 
                     m.log_w += lp;
-                    log_increments.push(lp);
+
+                    // Real delta since the last synchronization point:
+                    // includes this observe PLUS any factor() the particle
+                    // went through along the way. If we only used `lp`, a
+                    // factor between two observes (or before the first one)
+                    // would be left out of the resampling step.
+                    let increment = m.log_w - log_w_start;
+                    log_increments.push(increment);
 
                     // Inject the observed value so the machine can continue
                     send(&mut m, y_obs);
@@ -119,6 +168,14 @@ fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
 
 // Recursive function that returns true if the form contains at least one `observe`.
 // Fails if it finds an `observe` in a structurally unsafe position
+//
+// NOTE on `factor`: we deliberately do NOT treat "factor" as its own case
+// here. `factor` never pauses the machine (see FactorK in runtime.rs), so it
+// does not need the same synchronization guarantees as `observe`: particles
+// don't need to reach it in the same order for resampling to stay valid,
+// because there is no Msg to intercept at that point. It falls into the `_`
+// arm (standard call) and its arguments are still walked in case they
+// contain a nested `observe`.
 fn check_form(form: &Form) -> Result<bool, String> {
     match form {
         Form::Int(_) | Form::Float(_) | Form::Bool(_) | Form::Str(_) | Form::Nil | Form::Symbol(_) => {

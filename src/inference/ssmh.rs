@@ -9,7 +9,7 @@ walk over the program's execution trace.
 use crate::interpreter::{Addr, Machine, Msg, initial_machine, resume, send};
 use crate::parser::value::RVal;
 use rand::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// The Trace captures the complete history of a single execution of the program.
 #[derive(Clone, Debug, Default)]
@@ -17,6 +17,12 @@ pub struct Trace {
     pub values: HashMap<Addr, RVal>,
     pub sample_log_probs: HashMap<Addr, f64>,
     pub observe_log_probs: HashMap<Addr, f64>,
+    // Accumulated log-weight coming from `factor` calls during this run.
+    // Unlike observe_log_probs, this is not keyed by address: `factor` does
+    // not pause the machine, so there's no Msg to intercept per call. We
+    // read it straight from the machine's `log_w` once the trace reaches
+    // Done, since `FactorK` already accumulated it there internally.
+    pub factor_log_w: f64,
 }
 
 pub fn single_site_mh<R: Rng + ?Sized>(
@@ -76,8 +82,11 @@ fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
         .map(|(_, p)| p)
         .sum();
 
-    let num = num_s + prop.observe_log_probs.values().sum::<f64>();
-    let den = den_s + curr.observe_log_probs.values().sum::<f64>();
+    // factor_log_w se suma igual que observe_log_probs: ambos son densidad
+    // que la traza acumula sin generar una nueva direccion aleatoria, asi
+    // que entran al ratio sin necesitar termino de propuesta.
+    let num = num_s + prop.observe_log_probs.values().sum::<f64>() + prop.factor_log_w;
+    let den = den_s + curr.observe_log_probs.values().sum::<f64>() + curr.factor_log_w;
 
     let len_diff = (curr.values.len() as f64).ln() - (prop.values.len() as f64).ln();
 
@@ -119,7 +128,14 @@ fn run_trace<R: Rng + ?Sized>(
                 send(&mut next_m, y_obs);
                 m = next_m;
             }
-            Msg::Done(value, _) => return Ok((value, trace)),
+            Msg::Done(value, final_m) => {
+                // A esta altura final_m.log_w solo puede contener lo que
+                // sumaron los factor() de la corrida (observe no toca
+                // log_w en este algoritmo, mira mas arriba), asi que lo
+                // guardamos entero en el trace antes de descartar la maquina.
+                trace.factor_log_w = final_m.log_w;
+                return Ok((value, trace));
+            }
         }
     }
 }

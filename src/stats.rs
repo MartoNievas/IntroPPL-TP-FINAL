@@ -21,7 +21,7 @@ Cases covered:
 
 */
 
-use ppl_tp_final::parser::value::RVal;
+use crate::parser::value::RVal;
 use std::collections::HashMap;
 
 use crate::ui::print_ok;

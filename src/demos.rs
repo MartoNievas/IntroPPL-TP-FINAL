@@ -8,12 +8,13 @@ demonstrations for execution.
 use std::time::Instant;
 
 use rand::rngs::StdRng;
+use rand_distr::num_traits::Float;
 
-use ppl_tp_final::inference::bbvi::run_bbvi;
-use ppl_tp_final::inference::exact_enumeration::{enumerate_traces, posterior_table};
-use ppl_tp_final::inference::lw::likelihood_weighting;
-use ppl_tp_final::inference::smc::run_smc;
-use ppl_tp_final::inference::ssmh::single_site_mh;
+use crate::inference::bbvi::run_bbvi;
+use crate::inference::exact_enumeration::{enumerate_traces, posterior_table};
+use crate::inference::lw::likelihood_weighting;
+use crate::inference::smc::run_smc;
+use crate::inference::ssmh::single_site_mh;
 
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
@@ -57,6 +58,11 @@ pub fn build_demos() -> Vec<Demo> {
             id: 6,
             label: "Exact Enumeration",
             run: demo_enum,
+        },
+        Demo {
+            id: 7,
+            label: "Factor (soft conditioning)",
+            run: demo_factor,
         },
     ]
 }
@@ -314,5 +320,75 @@ pub fn demo_enum(_rng: &mut StdRng) {
             }
             Err(e) => print_err(&format!("Failure in Exact Enumeration: {e}")),
         }
+    });
+}
+
+pub fn demo_factor(rng: &mut StdRng) {
+    let model = r#"
+        ; Prior: mu ~ Normal(0, 10) (wide, weakly informative)
+        ; Instead of (observe (normal mu 1.0) 3.0), we compute the Gaussian
+        ; log-density by hand and add it with factor. Both approaches should
+        ; converge to (approximately) the same posterior.
+        (let [mu (sample (normal 0.0 10.0))
+              diff (- mu 3.0)
+              log_lik (* -0.5 (* diff diff))]
+            (factor log_lik)
+            mu)
+    "#;
+
+    run_demo("7. FACTOR (SOFT CONDITIONING)", model, || {
+        // factor(x) is unnormalized: it omits the Gaussian's
+        // -0.5*log(2*pi*sigma^2) constant. That constant is the same for
+        // every particle/step, so it cancels out in the posterior mean
+        // -- it would only shift the log evidence, which these algorithms
+        // don't report here. That's why the analytical mean below still
+        // matches a proper Normal(0,10) prior combined with a
+        // Normal(mu, 1.0) likelihood at 3.0, via precision weighting.
+        let analytical_mean = 3.0 / (1.0 + 1.0 / 100.0);
+        let analytical_std = (1.0 / (1.0 + 1.0 / 100.0)).sqrt();
+
+        println!(
+            "Analytical posterior (conjugate Normal-Normal): mean ~{analytical_mean:.4}, std ~{analytical_std:.4}"
+        );
+        println!();
+
+        let n_particles = 5000;
+        println!("Running LW with {n_particles} particles...");
+        match likelihood_weighting(model, n_particles, rng) {
+            Ok((vals, weights)) => {
+                let (mean, var) = weighted_mean_var(&vals, &weights);
+                let std_err = (var / n_particles as f64).sqrt();
+                let ess = effective_sample_size(&weights);
+                print_ok(&format!(
+                    "[LW]   Estimated posterior mean: {mean:.4} ± {std_err:.4}"
+                ));
+                print_ok(&format!(
+                    "[LW]   Effective Sample Size (ESS): {ess:.1} / {n_particles}"
+                ));
+            }
+            Err(e) => print_err(&format!("Failure in Likelihood Weighting: {e}")),
+        }
+
+        println!();
+
+        let steps = 4000;
+        let warmup = 1000;
+        println!("Running SSMH (Steps: {steps}, Warmup: {warmup})...");
+        match single_site_mh(model, rng, steps, warmup) {
+            Ok(chain) => {
+                let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
+                print_ok(&format!(
+                    "[SSMH] Estimated posterior mean: {mean:.4} ± {std_err:.4}"
+                ));
+                print_ok(&format!(
+                    "[SSMH] Effective Sample Size (ESS, via autocorrelation): {ess:.1} / {steps}"
+                ));
+            }
+            Err(e) => print_err(&format!("Failure in SSMH: {e}")),
+        }
+
+        println!(
+            "\n   Note: both LW and SSMH combine 'factor' with the same prior, so their\n   estimates should agree with each other and with the analytical value\n   above -- even though neither engine ever sees an explicit 'observe'."
+        );
     });
 }

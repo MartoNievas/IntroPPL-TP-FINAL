@@ -1,0 +1,9 @@
+; Prior: mu ~ Normal(0, 10)   (muy poco informativo)
+; En vez de (observe (normal mu 1.0) 3.0), calculamos la log-densidad
+; gaussiana a mano y la sumamos con factor. El resultado deberia
+; converger al mismo posterior que el observe equivalente.
+(let [mu (sample (normal 0.0 10.0))
+      diff (- mu 3.0)
+      log_lik (* -0.5 (* diff diff))]
+    (factor log_lik)
+    mu)

@@ -9,10 +9,10 @@ using the Score Function estimator (REINFORCE).
 
 use std::collections::HashMap;
 use crate::interpreter::{initial_machine, resume, send, Addr, Machine, Msg};
-use crate::parser::distribution::{make_guide, make_distribution, Distribution};
+use crate::parser::distribution::{make_guide, Distribution};
 use crate::parser::value::RVal;
 use rand::prelude::*;
-use rand_distr::num_traits::{Float, Pow};
+use rand_distr::num_traits::{Pow};
 
 
 /// Internal structure to store the result of a trace sampled from the guide.
@@ -192,15 +192,22 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
 
             }
 
-            Msg::Observe(addr, dist, y_obs, mut next_m) => {
+            Msg::Observe(_addr, dist, y_obs, mut next_m) => {
                 log_p += dist.log_prob(&y_obs);
                 send(&mut next_m, y_obs);
                 m = next_m;
             }
 
-            Msg::Done(val, _finish_machine) => {
-                // ELBO for this sample: log p(x, y) - log q(x)
-                let elbo_sample = log_p - log_q;
+            Msg::Done(val, finish_machine) => {
+                // finish_machine.log_w only ever accumulates contributions
+                // from `factor` calls: `observe` above adds straight to
+                // log_p by hand instead of touching Machine::log_w, so
+                // log_w stays untouched by anything except factor. Without
+                // folding it in here, any factor() in the model would be
+                // invisible to both the ELBO estimate and the score-function
+                // gradient's reward term, since factor never emits a Msg
+                // for this loop to intercept in the first place.
+                let elbo_sample = log_p + finish_machine.log_w - log_q;
                 return Ok(SampleResult {
                     val,
                     elbo_sample,

@@ -399,7 +399,39 @@ cargo run -- moneda.hoppl smc
 
 para aproximar la distribución a posteriori de `p` usando Sequential Monte Carlo. Podés cambiar `smc` por `lw`, `ssmh` o `bbvi` para comparar cómo cada motor de inferencia resuelve el mismo modelo.
 
-### 7. Próximos pasos
+### 7. Condicionamiento suave con `factor`
+
+`observe` es en realidad un caso particular de una operación más general: sumar densidad de log-verosimilitud a la traza de ejecución. `observe` lo hace de forma indirecta — le pasás una distribución y un valor, y el motor calcula `log_prob(valor)` por vos. El operador `(factor <expr>)` te da acceso directo a ese mecanismo: suma el número que le pases, tal cual, al log-peso acumulado de la traza, sin necesidad de una distribución ni de un valor observado concreto.
+
+```clojure
+(factor <expr>)
+```
+
+Esto es útil cuando lo que querés modelar no es "observé exactamente este valor" sino una noción más flexible de "esta configuración es más o menos plausible". Por ejemplo, podés reescribir a mano la densidad gaussiana que usaría `observe` internamente:
+
+```clojure
+; Equivalente (salvo la constante de normalización) a:
+;   (observe (normal mu 1.0) 3.0)
+(let [mu (sample (normal 0.0 10.0))
+      diff (- mu 3.0)
+      log_lik (* -0.5 (* diff diff))]
+    (factor log_lik)
+    mu)
+```
+
+La diferencia clave con `observe` es que `factor` no compara contra un dato exacto: te obliga a escribir vos mismo la función de densidad (o cualquier otra función de "qué tan bueno es este estado"), en vez de delegarla en una distribución con nombre. Esto habilita modelos donde la evidencia no es un punto fijo sino una preferencia continua — por ejemplo, penalizar configuraciones alejadas de un valor deseado sin fijar ese valor como una observación puntual:
+
+```clojure
+; Preferimos que p este cerca de 0.5, sin observar ningun dato concreto.
+(let [p (sample (beta 2.0 2.0))
+      penalizacion (* -2.0 (* (- p 0.5) (- p 0.5)))]
+    (factor penalizacion)
+    p)
+```
+
+**Importante:** a diferencia de `sample`, `factor` no le devuelve el control al motor de inferencia — no hay ninguna decisión estocástica que tomar, solo un número que sumar. Por eso podés usarlo con cualquiera de los algoritmos de inferencia soportados (`lw`, `ssmh`, `smc`) sin que la máquina se pause en ese punto. Como valor de retorno de la expresión, `(factor <expr>)` siempre produce `nil`, así que en general se usa como una sentencia intermedia dentro de un `let`, no como el valor final de un cuerpo.
+
+### 8. Próximos pasos
 
 A partir de acá, las secciones **Acerca del Lenguaje** (arriba) y **Extras** (más abajo) documentan todas las primitivas, distribuciones y garantías de seguridad estática (por ejemplo, qué patrones evita el analizador de SMC) que vas a necesitar para escribir modelos más complejos.
 
@@ -657,6 +689,4 @@ Desarrollar un módulo capaz de analizar el AST del modelo y exportar automátic
 Extender el motor de diagnóstico actual para incluir métricas de convergencia en tiempo real. Esto implica generar automáticamente datos sobre la evolución de la media estimada y el error estándar conforme aumenta el número de partículas o pasos de muestreo.
 * **Valor Pedagógico:** Es fundamental para la enseñanza de estadística computacional. Permite a los alumnos identificar visualmente cuándo un algoritmo ha alcanzado la convergencia y comprender el concepto de "burn-in" en métodos MCMC, diferenciando una estimación robusta de una inestable.
 
-### 4. Soporte para Condicionamiento Suave (Operador `factor`)
-Incorporar el operador `(factor <valor>)`, el cual añade un término directo a la log-verosimilitud global del modelo. A diferencia del operador `observe`, que es una simplificación, el uso de `factor` permite una mayor flexibilidad al definir modelos donde la observación no es un valor exacto, sino una potencialidad.
-* **Valor Pedagógico:** Obliga al estudiante a interactuar directamente con la teoría de la probabilidad, desplazando el enfoque desde la simple programación de modelos hacia la escritura de funciones de densidad, fortaleciendo su entendimiento sobre la inferencia bayesiana subyacente.
+> **Nota:** el operador de condicionamiento suave `factor` (originalmente listado acá como característica futura) ya fue implementado — ver [Tutorial, sección 7](#7-condicionamiento-suave-con-factor) y la demo 7 (`cargo run -- 7`).
