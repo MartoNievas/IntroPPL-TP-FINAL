@@ -496,7 +496,7 @@ impl Distribution {
  impl Distribution {
     pub fn finite_support(&self) -> Result<Vec<(RVal, f64)>, String> {
         match self {
-            Distribution::Bernoulli { p } => {
+            Distribution::Bernoulli { .. } => {
                 let mut out = Vec::new();
                 for b in [true, false] {
                     let val = RVal::Bool(b);

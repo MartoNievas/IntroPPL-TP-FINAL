@@ -1,8 +1,8 @@
 /*
 
-Modulo dedicado al parser de argumentos que se ingresan por la entrada estandar para decididr el modo
-de ejecucion del programa.
-Ademas tambien parsea el algoritmo de inferncia a usar en el modo archivo probabilistico.
+Module dedicated to parsing the arguments provided via standard input to decide the
+execution mode of the program.
+It also parses the inference algorithm to use in probabilistic file mode.
 
 */
 use crate::demos::{build_demos, Demo};
@@ -16,40 +16,41 @@ pub enum Algorithm {
     Enumeration,
 }
 
-// Configuracion ya validada/derivada de los argumentos de linea de comando.
-// `main` solo construye esto y lo pasa a `runner::run`; toda la logica de
-// interpretacion de argv vive aca, no en main.
+// Already validated/derived configuration from the command-line arguments.
+// `main` only builds this and passes it to `runner::run`; all the logic for
+// interpreting argv lives here, not in main.
 #[derive(Debug, Clone)]
 pub enum Config {
-    /// None -> corre todas las demos; Some(n) -> corre la demo n.
+    /// None -> runs all demos; Some(n) -> runs demo n.
     Demo(Option<usize>),
-    /// (archivo, algoritmo de inferencia)
+    /// (file, inference algorithm)
     File(String, Algorithm),
-    /// archivo sin algoritmo, se asume deterministico
+    /// file without algorithm, assumed to be deterministic
     Deterministic(String),
-    /// argv invalido; el String es el mensaje de error a mostrar antes de print_usage
+
+    /// invalid argv; the String is the error message to show before print_usage
     Invalid(String),
 }
 
 impl Config {
     pub fn parse_args(args: Vec<String>) -> Self {
-        // Modo archivo + algoritmo: cargo run -- <archivo.hoppl> <algoritmo>
+        // File + algorithm mode: cargo run -- <file.hoppl> <algorithm>
         if args.len() >= 3 && args[1].parse::<usize>().is_err() {
             let file_path = args[1].clone();
             let algo_name = &args[2];
 
             return match Algorithm::parse(algo_name) {
                 Some(algorithm) => Config::File(file_path, algorithm),
-                None => Config::Invalid(format!("Algoritmo desconocido: '{algo_name}'")),
+                None => Config::Invalid(format!("Unknown algorithm: '{algo_name}'")),
             };
         }
 
-        // Modo archivo deterministico: cargo run -- <archivo.hoppl>  (sin algoritmo)
+        // Deterministic file mode: cargo run -- <file.hoppl>  (no algorithm)
         if args.len() == 2 && args[1].parse::<usize>().is_err() {
             return Config::Deterministic(args[1].clone());
         }
 
-        // Modo demo: cargo run [-- <numero>]
+        // Demo mode: cargo run [-- <number>]
         match args.get(1) {
             None => Config::Demo(None),
             Some(raw) => match raw.parse::<usize>() {
@@ -59,12 +60,12 @@ impl Config {
                         Config::Demo(Some(n))
                     } else {
                         Config::Invalid(format!(
-                            "Numero de demo invalido: {n}. Usa un valor entre 1 y {}.",
+                            "Invalid demo number: {n}. Use a value between 1 and {}.",
                             demos.len()
                         ))
                     }
                 }
-                Err(_) => Config::Invalid(format!("Argumento no reconocido: '{raw}'")),
+                Err(_) => Config::Invalid(format!("Unrecognized argument: '{raw}'")),
             },
         }
     }
@@ -96,24 +97,24 @@ impl Algorithm {
 }
 
 pub fn print_usage(demos: &[Demo]) {
-    eprintln!("Uso:");
-    eprintln!("  cargo run                                -> corre todas las demos hardcodeadas");
+    eprintln!("Usage:");
+    eprintln!("  cargo run                                -> runs all hardcoded demos");
     eprintln!(
-        "  cargo run -- <numero>                    -> corre una demo especifica (1-{})",
+        "  cargo run -- <number>                    -> runs a specific demo (1-{})",
         demos.len()
     );
     eprintln!(
-        "  cargo run -- <archivo.hoppl>             -> corre un modelo deterministico (sin sample/observe)"
+        "  cargo run -- <file.hoppl>                -> runs a deterministic model (no sample/observe)"
     );
     eprintln!(
-        "  cargo run -- <archivo.hoppl> <algoritmo> -> corre un modelo probabilistico con el algoritmo dado"
+        "  cargo run -- <file.hoppl> <algorithm>    -> runs a probabilistic model with the given algorithm"
     );
     eprintln!();
     eprintln!(
-        "Algoritmos disponibles: lw, ssmh, smc, bbvi, exact-enumeration (alias: enum, exact)"
+        "Available algorithms: lw, ssmh, smc, bbvi, exact-enumeration (alias: enum, exact)"
     );
     eprintln!();
-    eprintln!("Demos disponibles:");
+    eprintln!("Available demos:");
     for d in demos {
         eprintln!("   {}: {}", d.id, d.label);
     }
@@ -124,7 +125,7 @@ mod tests {
     use super::*;
 
     fn args(v: &[&str]) -> Vec<String> {
-        // args[0] es el nombre del binario, como en env::args()
+        // args[0] is the binary name, as in env::args()
         std::iter::once("hoppl".to_string())
             .chain(v.iter().map(|s| s.to_string()))
             .collect()
@@ -169,27 +170,27 @@ mod tests {
 
     #[test]
     fn config_file_without_algorithm_is_deterministic() {
-        match Config::parse_args(args(&["modelo.hoppl"])) {
-            Config::Deterministic(path) => assert_eq!(path, "modelo.hoppl"),
-            other => panic!("esperaba Deterministic, obtuve {other:?}"),
+        match Config::parse_args(args(&["model.hoppl"])) {
+            Config::Deterministic(path) => assert_eq!(path, "model.hoppl"),
+            other => panic!("expected Deterministic, got {other:?}"),
         }
     }
 
     #[test]
     fn config_file_with_algorithm() {
-        match Config::parse_args(args(&["modelo.hoppl", "lw"])) {
+        match Config::parse_args(args(&["model.hoppl", "lw"])) {
             Config::File(path, algo) => {
-                assert_eq!(path, "modelo.hoppl");
+                assert_eq!(path, "model.hoppl");
                 assert!(matches!(algo, Algorithm::Lw));
             }
-            other => panic!("esperaba File, obtuve {other:?}"),
+            other => panic!("expected File, got {other:?}"),
         }
     }
 
     #[test]
     fn config_file_with_unknown_algorithm_is_invalid() {
         assert!(matches!(
-            Config::parse_args(args(&["modelo.hoppl", "gibbs"])),
+            Config::parse_args(args(&["model.hoppl", "gibbs"])),
             Config::Invalid(_)
         ));
     }

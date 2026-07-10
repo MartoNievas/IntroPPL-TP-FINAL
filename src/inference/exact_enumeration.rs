@@ -6,10 +6,9 @@ probabilistic program with finite discrete variables.
 
 */
 
-use crate::interpreter::{initial_machine, resume, send, Machine, Msg};
-use crate::parser::distribution::Distribution;
+use crate::interpreter::{initial_machine, resume, send, Msg};
 use crate::parser::value::RVal;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap};
 
 // Mathematical helper function equivalent to Python's `scipy.special.logsumexp`.
 // Computes log(exp(a) + exp(b)) in a numerically stable way.
