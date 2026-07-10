@@ -640,3 +640,23 @@ Se trata de un método de inferencia **100% determinista y exacto**. En lugar de
 
 
 **Nota:** A diferencia de **BBVI** este algoritmo de inferencia no se menciona de manera explícita en el libro, pero fue visto en clase, esto es debido a su poca aplicabilidad en casos reales.
+
+## Futuras Características: Hacia una Plataforma de Experimentación Probabilística
+
+Para elevar HOPPL de ser una herramienta de demostración a una plataforma de investigación y enseñanza en estadística computacional, se han identificado las siguientes líneas de trabajo futuro:
+
+### 1. Debugger de Inferencia y Visualización de Trazas
+Implementar un modo de ejecución paso a paso que permita inspeccionar el estado interno de la máquina CEK. Esta característica permitirá visualizar en tiempo real cómo se actualizan los pesos de las partículas en los algoritmos de inferencia ante cada observación.
+* **Valor Pedagógico:** Desmitifica el proceso de inferencia, permitiendo al estudiante comprender que los resultados probabilísticos son el producto de ajustes matemáticos incrementales sobre las partículas, en lugar de un proceso opaco.
+
+### 2. Generación de Modelos Gráficos Probabilísticos (PGM)
+Desarrollar un módulo capaz de analizar el AST del modelo y exportar automáticamente su estructura en formato `.dot` (Graphviz). Esto generará el Grafo Acíclico Dirigido (DAG) correspondiente a las dependencias estocásticas del programa.
+* **Valor Pedagógico:** Transforma la lógica abstracta del código en una estructura matemática visual, facilitando la comprensión de las relaciones de condicionalidad y las independencias entre variables latentes y observadas.
+
+### 3. Análisis de Convergencia y Costo de Inferencia
+Extender el motor de diagnóstico actual para incluir métricas de convergencia en tiempo real. Esto implica generar automáticamente datos sobre la evolución de la media estimada y el error estándar conforme aumenta el número de partículas o pasos de muestreo.
+* **Valor Pedagógico:** Es fundamental para la enseñanza de estadística computacional. Permite a los alumnos identificar visualmente cuándo un algoritmo ha alcanzado la convergencia y comprender el concepto de "burn-in" en métodos MCMC, diferenciando una estimación robusta de una inestable.
+
+### 4. Soporte para Condicionamiento Suave (Operador `factor`)
+Incorporar el operador `(factor <valor>)`, el cual añade un término directo a la log-verosimilitud global del modelo. A diferencia del operador `observe`, que es una simplificación, el uso de `factor` permite una mayor flexibilidad al definir modelos donde la observación no es un valor exacto, sino una potencialidad.
+* **Valor Pedagógico:** Obliga al estudiante a interactuar directamente con la teoría de la probabilidad, desplazando el enfoque desde la simple programación de modelos hacia la escritura de funciones de densidad, fortaleciendo su entendimiento sobre la inferencia bayesiana subyacente.
