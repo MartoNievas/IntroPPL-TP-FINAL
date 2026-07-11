@@ -17,6 +17,7 @@ fn run_to_done(code: &str) -> Result<RVal, String> {
     let m = initial_machine(code)?;
     match resume(m)? {
         Msg::Done(val, _) => Ok(val),
+        Msg::Factor(_, _ ,_ ) => Err("Se obtuvo Msg::Factor inesperadamente en un test determinístico".into()),
         Msg::Sample(_, _, _) => Err("Se obtuvo Msg::Sample inesperadamente en un test determinístico".into()),
         Msg::Observe(_, _, _, _) => Err("Se obtuvo Msg::Observe inesperadamente en un test determinístico".into()),
     }

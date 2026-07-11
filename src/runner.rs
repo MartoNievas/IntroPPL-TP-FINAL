@@ -6,6 +6,7 @@ Module that implements the different execution modes of the language:
     - Single demonstration
     - Non-deterministic file
     - Deterministic file
+    - Non-deterministic file in debug mode.
 
 */
 
@@ -60,6 +61,12 @@ pub fn run(config: Config) {
             let model = load_model_file(&file_path);
             let mut rng = StdRng::seed_from_u64(42);
             run_algorithm_on_model(algorithm, &model, &mut rng);
+        }
+        Config::Debug(file_path, algorithm) => {
+            //let model = load_model_file(&file_path);
+            //let mut rng = StdRng::seed_from_u64(42);
+            println!("Debug mode active");
+            //run_debug_term(&model, algorithm, rng);
         }
     }
 }
@@ -141,7 +148,19 @@ fn run_deterministic_model(file_path: &str, model: &str) {
                 "The program is not deterministic: found a 'sample' at address {addr:?}."
             ));
             println!(
-                "   This mode is only for programs without 'sample'/'observe'. Run with an inference algorithm instead:"
+                "   This mode is only for programs without 'sample'/'observe'/'factor'. Run with an inference algorithm instead:"
+            );
+            println!(
+                "      cargo run -- {file_path} <algorithm>   (lw | ssmh | smc | bbvi | exact-enumeration)"
+            );
+        }
+
+        Ok(Msg::Factor(addr, _ ,_ )) => {
+            print_err(&format!(
+                "The program is not deterministic: found an 'observe' at address {addr:?}."
+            ));
+            println!(
+                "   This mode is only for programs without 'sample'/'observe'/'factor'. Run with an inference algorithm instead:"
             );
             println!(
                 "      cargo run -- {file_path} <algorithm>   (lw | ssmh | smc | bbvi | exact-enumeration)"
@@ -153,7 +172,7 @@ fn run_deterministic_model(file_path: &str, model: &str) {
                 "The program is not deterministic: found an 'observe' at address {addr:?}."
             ));
             println!(
-                "   This mode is only for programs without 'sample'/'observe'. Run with an inference algorithm instead:"
+                "   This mode is only for programs without 'sample'/'observe'/'factor'. Run with an inference algorithm instead:"
             );
             println!(
                 "      cargo run -- {file_path} <algorithm>   (lw | ssmh | smc | bbvi | exact-enumeration)"

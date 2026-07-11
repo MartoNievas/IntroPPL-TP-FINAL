@@ -27,15 +27,27 @@ pub enum Config {
     File(String, Algorithm),
     /// file without algorithm, assumed to be deterministic
     Deterministic(String),
-
+    /// file + inference algorithm with debug mode active
+    Debug(String, Algorithm),
     /// invalid argv; the String is the error message to show before print_usage
     Invalid(String),
 }
 
 impl Config {
     pub fn parse_args(args: Vec<String>) -> Self {
+        // File + algorithm debug mode: cargo run -- debug <file.hoppl> <algorithm>
+        if args.len() == 4 && args[1].parse::<usize>().is_err() && args[1] == "debug" {
+            let file_path = args[2].clone();
+            let algo_name = &args[3];
+
+            return match Algorithm::parse(algo_name) {
+                Some(algoritmh) => Config::Debug(file_path, algoritmh),
+                None => Config::Invalid(format!("Unknown algorithm: '{algo_name}'")),
+            }
+        }
+        
         // File + algorithm mode: cargo run -- <file.hoppl> <algorithm>
-        if args.len() >= 3 && args[1].parse::<usize>().is_err() {
+        if args.len() == 3 && args[1].parse::<usize>().is_err() {
             let file_path = args[1].clone();
             let algo_name = &args[2];
 

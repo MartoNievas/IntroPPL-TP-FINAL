@@ -67,6 +67,7 @@ pub enum Instr {
 pub enum Msg {
     Sample(Addr, Distribution, Machine),
     Observe(Addr, Distribution, RVal, Machine),
+    Factor(Addr, f64, Machine),
     Done(RVal, Machine),   
 }
 

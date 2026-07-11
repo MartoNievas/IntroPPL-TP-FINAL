@@ -6,6 +6,7 @@ pub mod ui;
 pub mod cli;
 pub mod demos;
 pub mod runner;
+pub mod debugger;
 
 pub use interpreter::*;
 pub use inference::*;

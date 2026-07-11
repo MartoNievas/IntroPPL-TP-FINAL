@@ -192,6 +192,10 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
 
             }
 
+            Msg::Factor(_addr, _val , next_m  ) => {
+                m = next_m;
+            }
+
             Msg::Observe(_addr, dist, y_obs, mut next_m) => {
                 log_p += dist.log_prob(&y_obs);
                 send(&mut next_m, y_obs);

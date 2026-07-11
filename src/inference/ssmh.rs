@@ -149,6 +149,9 @@ fn run_trace<R: Rng + ?Sized>(
                 send(&mut next_m, x);
                 m = next_m;
             }
+            Msg::Factor(_addr, _w , next_m ) => {
+                m = next_m;
+            }
             Msg::Observe(addr, dist, y_obs, mut next_m) => {
                 let lp = dist.log_prob(&y_obs);
 
