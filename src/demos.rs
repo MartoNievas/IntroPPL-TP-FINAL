@@ -18,7 +18,10 @@ use crate::inference::ssmh::single_site_mh;
 
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
-use crate::stats::{effective_sample_size, mcmc_mean_std_err_ess, sample_mean_std_err, weighted_mean_var};
+use crate::stats::{
+    ci95_margin, effective_sample_size, mcmc_mean_std_err_ess, sample_mean_std_err,
+    weighted_mean_var,
+};
 use crate::ui::{fmt_log_mass, print_err, print_header, print_ok, print_warn};
 
 pub struct Demo {
@@ -93,9 +96,15 @@ pub fn demo_lw(rng: &mut StdRng) {
             Ok((vals, weights)) => {
                 let (mean, var) = weighted_mean_var(&vals, &weights);
                 let std_err = (var / n_particles as f64).sqrt();
+                let margin = ci95_margin(std_err);
                 let ess = effective_sample_size(&weights);
                 print_ok(&format!(
                     "Estimated posterior mean: {mean:.4} ± {std_err:.4} (Analytical: ~1.5000)"
+                ));
+                print_ok(&format!(
+                    "95% CI: [{:.4}, {:.4}]",
+                    mean - margin,
+                    mean + margin
                 ));
                 print_ok(&format!(
                     "Effective Sample Size (ESS): {ess:.1} / {n_particles}"
@@ -128,8 +137,14 @@ pub fn demo_smc(rng: &mut StdRng) {
             match run_smc(model, n_particles, rng) {
                 Ok(vals) => {
                     let (mean, std_err) = sample_mean_std_err(&vals);
+                    let margin = ci95_margin(std_err);
                     print_ok(&format!(
                         "Estimated probability 'p': {mean:.4} ± {std_err:.4} (Analytical: ~0.6250)"
+                    ));
+                    print_ok(&format!(
+                        "95% CI: [{:.4}, {:.4}]",
+                        mean - margin,
+                        mean + margin
                     ));
                 }
                 Err(e) => print_err(&format!("Failure in SMC: {e}")),
@@ -185,15 +200,32 @@ pub fn demo_ssmh(rng: &mut StdRng) {
         println!("Running SSMH (Steps: {steps}, Warmup: {warmup})...");
 
         match single_site_mh(model, rng, steps, warmup) {
-            Ok(chain) => {
+            Ok((chain, acceptance_rate)) => {
                 let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
+                let margin = ci95_margin(std_err);
 
                 print_ok(&format!(
                     "Estimated slope 'm': {mean:.4} ± {std_err:.4} (Expected: 2.0)"
                 ));
                 print_ok(&format!(
+                    "95% CI: [{:.4}, {:.4}]",
+                    mean - margin,
+                    mean + margin
+                ));
+                print_ok(&format!(
                     "Effective Sample Size (ESS, via autocorrelation): {ess:.1} / {steps}"
                 ));
+
+                if acceptance_rate.is_nan() {
+                    print_warn(
+                        "Acceptance rate: N/A (model has no probabilistic 'sample' sites to propose on)",
+                    );
+                } else {
+                    print_ok(&format!(
+                        "Acceptance rate: {:.1}%",
+                        100.0 * acceptance_rate
+                    ));
+                }
             }
             Err(e) => print_err(&format!("Failure in SSMH: {e}")),
         }
@@ -358,9 +390,15 @@ pub fn demo_factor(rng: &mut StdRng) {
             Ok((vals, weights)) => {
                 let (mean, var) = weighted_mean_var(&vals, &weights);
                 let std_err = (var / n_particles as f64).sqrt();
+                let margin = ci95_margin(std_err);
                 let ess = effective_sample_size(&weights);
                 print_ok(&format!(
                     "[LW]   Estimated posterior mean: {mean:.4} ± {std_err:.4}"
+                ));
+                print_ok(&format!(
+                    "[LW]   95% CI: [{:.4}, {:.4}]",
+                    mean - margin,
+                    mean + margin
                 ));
                 print_ok(&format!(
                     "[LW]   Effective Sample Size (ESS): {ess:.1} / {n_particles}"
@@ -375,14 +413,26 @@ pub fn demo_factor(rng: &mut StdRng) {
         let warmup = 1000;
         println!("Running SSMH (Steps: {steps}, Warmup: {warmup})...");
         match single_site_mh(model, rng, steps, warmup) {
-            Ok(chain) => {
+            Ok((chain, acceptance_rate)) => {
                 let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
+                let margin = ci95_margin(std_err);
                 print_ok(&format!(
                     "[SSMH] Estimated posterior mean: {mean:.4} ± {std_err:.4}"
                 ));
                 print_ok(&format!(
+                    "[SSMH] 95% CI: [{:.4}, {:.4}]",
+                    mean - margin,
+                    mean + margin
+                ));
+                print_ok(&format!(
                     "[SSMH] Effective Sample Size (ESS, via autocorrelation): {ess:.1} / {steps}"
                 ));
+                if !acceptance_rate.is_nan() {
+                    print_ok(&format!(
+                        "[SSMH] Acceptance rate: {:.1}%",
+                        100.0 * acceptance_rate
+                    ));
+                }
             }
             Err(e) => print_err(&format!("Failure in SSMH: {e}")),
         }

@@ -27,10 +27,19 @@ use crate::cli::{print_usage, Algorithm, Config};
 use crate::demos::build_demos;
 use crate::interpreter::{initial_machine, resume, Msg};
 use crate::stats::{
-    effective_sample_size, is_numeric, mcmc_mean_std_err_ess, print_categorical_unweighted,
-    print_categorical_weighted, sample_mean_std_err, weighted_mean_var,
+    ci95_margin, effective_sample_size, is_numeric, mcmc_mean_std_err_ess,
+    print_categorical_unweighted, print_categorical_weighted, sample_mean_std_err,
+    weighted_mean_var,
 };
 use crate::ui::{fmt_log_mass, pause, print_err, print_header, print_ok, print_warn};
+
+// Threshold (in percent) below which we warn about likely particle/sample
+// degeneracy. Shared by LW's ESS% and SSMH's acceptance rate diagnostics.
+const LOW_DIAGNOSTIC_THRESHOLD_PCT: f64 = 10.0;
+// Upper threshold for SSMH's acceptance rate: if the chain accepts almost
+// every proposal, it's usually a sign the proposal distribution is too
+// conservative and under-explores the posterior.
+const HIGH_ACCEPTANCE_THRESHOLD_PCT: f64 = 90.0;
 
 // Single execution entry point: receives the Config already validated by
 // `cli::Config::parse_args` and decides what to run. `main` doesn't need to
@@ -180,13 +189,26 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                     if vals.iter().all(is_numeric) {
                         let (mean, var) = weighted_mean_var(&vals, &weights);
                         let std_err = (var / N_PARTICLES_LW as f64).sqrt();
+                        let margin = ci95_margin(std_err);
                         let ess = effective_sample_size(&weights);
+                        let ess_pct = 100.0 * ess / N_PARTICLES_LW as f64;
+
                         print_ok(&format!(
                             "Estimated posterior mean: {mean:.4} ± {std_err:.4}"
                         ));
                         print_ok(&format!(
-                            "Effective Sample Size (ESS): {ess:.1} / {N_PARTICLES_LW}"
+                            "95% CI: [{:.4}, {:.4}]",
+                            mean - margin,
+                            mean + margin
                         ));
+                        print_ok(&format!(
+                            "Effective Sample Size (ESS): {ess:.1} / {N_PARTICLES_LW} ({ess_pct:.1}%)"
+                        ));
+                        if ess_pct < LOW_DIAGNOSTIC_THRESHOLD_PCT {
+                            print_warn(
+                                "Low ESS: particles may be degenerating. Consider increasing N or reviewing the model.",
+                            );
+                        }
                     } else {
                         print_categorical_weighted(&vals, &weights);
                     }
@@ -200,8 +222,14 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                 Ok(vals) => {
                     if vals.iter().all(is_numeric) {
                         let (mean, std_err) = sample_mean_std_err(&vals);
+                        let margin = ci95_margin(std_err);
                         print_ok(&format!(
                             "Estimated expected value: {mean:.4} ± {std_err:.4}"
+                        ));
+                        print_ok(&format!(
+                            "95% CI: [{:.4}, {:.4}]",
+                            mean - margin,
+                            mean + margin
                         ));
                     } else {
                         print_categorical_unweighted(&vals);
@@ -213,15 +241,39 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
         Algorithm::Ssmh => {
             println!("Running SSMH (Steps: {SSMH_STEPS}, Warmup: {SSMH_WARMUP})...");
             match single_site_mh(model, rng, SSMH_STEPS, SSMH_WARMUP) {
-                Ok(chain) => {
+                Ok((chain, acceptance_rate)) => {
                     if chain.iter().all(is_numeric) {
                         let (mean, std_err, ess) = mcmc_mean_std_err_ess(&chain);
+                        let margin = ci95_margin(std_err);
                         print_ok(&format!("Estimated value: {mean:.4} ± {std_err:.4}"));
+                        print_ok(&format!(
+                            "95% CI: [{:.4}, {:.4}]",
+                            mean - margin,
+                            mean + margin
+                        ));
                         print_ok(&format!(
                             "Effective Sample Size (ESS, via autocorrelation): {ess:.1} / {SSMH_STEPS}"
                         ));
                     } else {
                         print_categorical_unweighted(&chain);
+                    }
+
+                    if acceptance_rate.is_nan() {
+                        print_warn(
+                            "Acceptance rate: N/A (model has no probabilistic 'sample' sites to propose on)",
+                        );
+                    } else {
+                        let acc_pct = 100.0 * acceptance_rate;
+                        print_ok(&format!("Acceptance rate: {acc_pct:.1}%"));
+                        if acc_pct < LOW_DIAGNOSTIC_THRESHOLD_PCT {
+                            print_warn(
+                                "Low acceptance rate: the chain is barely moving. Consider reviewing the model or the proposal.",
+                            );
+                        } else if acc_pct > HIGH_ACCEPTANCE_THRESHOLD_PCT {
+                            print_warn(
+                                "Very high acceptance rate: the chain may be under-exploring the posterior (proposals too conservative).",
+                            );
+                        }
                     }
                 }
                 Err(e) => print_err(&format!("Failure in SSMH: {e}")),

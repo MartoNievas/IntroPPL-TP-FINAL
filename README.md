@@ -103,7 +103,7 @@ El binario soporta cuatro modos de uso distintos:
 cargo run
 ```
 
-Ejecuta, en orden, las 6 demostraciones incluidas en el proyecto (Likelihood Weighting, SMC, seguridad estática de SMC, Single-Site MH, BBVI y Exact Enumeration), pausando entre cada una para que puedas leer los resultados antes de continuar.
+Ejecuta, en orden, las 7 demostraciones incluidas en el proyecto (Likelihood Weighting, SMC, seguridad estática de SMC, Single-Site MH, BBVI, Exact Enumeration y pruebas con factor), pausando entre cada una para que puedas leer los resultados antes de continuar.
 
 ### 2. Correr una demo específica
 
@@ -111,7 +111,7 @@ Ejecuta, en orden, las 6 demostraciones incluidas en el proyecto (Likelihood Wei
 cargo run -- <numero>
 ```
 
-Donde `<numero>` es un valor entre `1` y `6`. Por ejemplo:
+Donde `<numero>` es un valor entre `1` y `7`. Por ejemplo:
 
 ```bash
 cargo run -- 4
@@ -452,7 +452,7 @@ TP-FINAL-PPL
 |   |-- cli.rs                  -> Parseo de argv y validación en Config (Demo, File, Deterministic, 
 |   |                              Invalid)
 |   |-- ui.rs                   -> Formateo de colores, headers y mensajes para impresión por terminal
-|   |-- demos.rs                -> Definición de las 6 demostraciones hardcodeadas del intérprete
+|   |-- demos.rs                -> Definición de las 7 demostraciones hardcodeadas del intérprete
 |   |-- runner.rs               -> Ejecución de los distintos modos: demos completas/particulares,    
 |   |                              archivo determinístico/no determinístico
 |   |-- stats.rs                -> Estadística descriptiva y diagnósticos de convergencia (media, ESS, 
@@ -526,6 +526,28 @@ Sin embargo, se tomó la decisión arquitectónica final de prescindir del CPS p
 # Extras
 
 En esta sección vamos a hablar de cosas agregadas por fuera de la consigna para hacer un trabajo práctico más completo.
+
+## Diagnósticos de Convergencia MCMC y Métricas (`src/stats.rs`)
+
+Para evaluar rigurosamente la calidad de las cadenas generadas por los algoritmos de inferencia y garantizar la validez estadística de los resultados aproximados, el módulo `stats.rs` calcula y reporta tres métricas de diagnóstico clave al finalizar la ejecución:
+
+### 1. Intervalo de Confianza del 95% (95% CI)
+Indica los percentiles $2.5\%$ y $97.5\%$ de la distribución empírica marginal obtenida de las muestras. Provee una región de alta densidad de probabilidad que permite localizar dónde se concentra el valor real de los parámetros latentes con un nivel de significancia estadística estándar.
+
+### 2. Tamaño de Muestra Efectivo Porcentual (ESS%)
+Debido a la naturaleza secuencial y estocástica de algoritmos como Metropolis-Hastings, las muestras sucesivas de la cadena suelen estar fuertemente autocorrelacionadas. El **Tamaño de Muestra Efectivo (ESS)** estima cuántas muestras independientes y *no correlacionadas* contiene la traza real:
+
+$$\text{ESS} = \frac{N}{1 + 2 \sum_{k=1}^{\infty} \rho_k}$$
+
+Donde $N$ es el tamaño total de la muestra y $\rho_k$ es la autocorrelación al lag $k$.
+* **ESS%:** Representa la relación porcentual $(\text{ESS} / N) \times 100$. Un ESS% bajo (ej. $< 5\%$) alerta al desarrollador sobre una fuerte correlación y una mezcla deficiente (*poor mixing*), sugiriendo la necesidad de incrementar el tamaño de la cadena o ajustar las propuestas.
+
+### 3. Tasa de Aceptación (Acceptance Rate)
+Métrica específica de los algoritmos MCMC (como Single-Site MH) que mide la proporción de estados propuestos que fueron aceptados sobre el total de pasos iterados:
+
+$$\text{Tasa de Aceptación} = \frac{\text{Propuestas Aceptadas}}{\text{Total de Iteraciones}}$$
+
+* **Interpretación:** Permite ajustar el tamaño de los pasos de las distribuciones de propuesta. Una tasa excesivamente alta indica que el algoritmo está dando pasos muy pequeños explorando de forma ineficiente, mientras que una tasa muy baja refleja que la mayoría de los saltos son rechazados, estancando la cadena en el mismo estado.
 
 ## Parser (`src/parser/sexpr.rs`)
 
@@ -680,13 +702,5 @@ Para elevar HOPPL de ser una herramienta de demostración a una plataforma de in
 ### 1. Debugger de Inferencia y Visualización de Trazas
 Implementar un modo de ejecución paso a paso que permita inspeccionar el estado interno de la máquina CEK. Esta característica permitirá visualizar en tiempo real cómo se actualizan los pesos de las partículas en los algoritmos de inferencia ante cada observación.
 * **Valor Pedagógico:** Desmitifica el proceso de inferencia, permitiendo al estudiante comprender que los resultados probabilísticos son el producto de ajustes matemáticos incrementales sobre las partículas, en lugar de un proceso opaco.
-
-### 2. Generación de Modelos Gráficos Probabilísticos (PGM)
-Desarrollar un módulo capaz de analizar el AST del modelo y exportar automáticamente su estructura en formato `.dot` (Graphviz). Esto generará el Grafo Acíclico Dirigido (DAG) correspondiente a las dependencias estocásticas del programa.
-* **Valor Pedagógico:** Transforma la lógica abstracta del código en una estructura matemática visual, facilitando la comprensión de las relaciones de condicionalidad y las independencias entre variables latentes y observadas.
-
-### 3. Análisis de Convergencia y Costo de Inferencia
-Extender el motor de diagnóstico actual para incluir métricas de convergencia en tiempo real. Esto implica generar automáticamente datos sobre la evolución de la media estimada y el error estándar conforme aumenta el número de partículas o pasos de muestreo.
-* **Valor Pedagógico:** Es fundamental para la enseñanza de estadística computacional. Permite a los alumnos identificar visualmente cuándo un algoritmo ha alcanzado la convergencia y comprender el concepto de "burn-in" en métodos MCMC, diferenciando una estimación robusta de una inestable.
 
 > **Nota:** el operador de condicionamiento suave `factor` (originalmente listado acá como característica futura) ya fue implementado — ver [Tutorial, sección 7](#7-condicionamiento-suave-con-factor) y la demo 7 (`cargo run -- 7`).

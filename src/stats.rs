@@ -18,6 +18,9 @@ Cases covered:
     - SSMH (MCMC): mean, standard error, and ESS adjusted for autocorrelation.
     - Non-numeric results: categorical frequency distribution, weighted
       or unweighted.
+    - 95% confidence interval margin, usable on top of any of the standard
+      errors above (assumes an approximately normal sampling distribution
+      of the estimator, valid by the CLT for large n / many particles).
 
 */
 
@@ -143,6 +146,14 @@ pub fn mcmc_mean_std_err_ess(chain: &[RVal]) -> (f64, f64, f64) {
     (mean, std_err, ess)
 }
 
+/// Returns the +/- margin of a 95% confidence interval given a standard
+/// error already computed by one of the functions above (weighted or
+/// unweighted mean, or MCMC-adjusted). The caller builds the interval as
+/// `[mean - margin, mean + margin]`.
+pub fn ci95_margin(std_err: f64) -> f64 {
+    1.96 * std_err
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +190,12 @@ mod tests {
         assert!((mean - 2.0).abs() < 1e-9);
         assert_eq!(std_err, 0.0);
         assert_eq!(ess, 10.0);
+    }
+
+    #[test]
+    fn ci95_margin_scales_linearly_with_std_err() {
+        assert!((ci95_margin(1.0) - 1.96).abs() < 1e-9);
+        assert!((ci95_margin(0.0)).abs() < 1e-9);
+        assert!((ci95_margin(2.0) - 3.92).abs() < 1e-9);
     }
 }

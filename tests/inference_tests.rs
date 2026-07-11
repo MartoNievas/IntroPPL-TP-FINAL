@@ -93,7 +93,7 @@ mod inference_algorithms_tests {
         let steps = 3000;
         let warmup = 1000;
 
-        let chain = single_site_mh(CONJUGATE_MODEL, &mut rng, steps, warmup)
+        let (chain, acceptance_rate) = single_site_mh(CONJUGATE_MODEL, &mut rng, steps, warmup)
             .expect("Failed to execute SSMH");
 
         // The final chain must have exactly length 'steps' (warmup excluded)
@@ -107,6 +107,14 @@ mod inference_algorithms_tests {
             error < TOLERANCE,
             "SSMH estimated mean: {}, expected: {}. Error ({}) exceeds tolerance.",
             estimated_mean, EXACT_MEAN, error
+        );
+
+        // CONJUGATE_MODEL has exactly one 'sample' site, so every proposal
+        // is a genuine accept/reject attempt -- the rate should be a real
+        // number in (0, 1], never NaN.
+        assert!(
+            acceptance_rate > 0.0 && acceptance_rate <= 1.0,
+            "acceptance rate out of the (0, 1] range: {acceptance_rate}"
         );
     }
 
@@ -245,7 +253,7 @@ mod inference_algorithms_tests {
         let steps = 3000;
         let warmup = 1000;
 
-        let chain = single_site_mh(FACTOR_MODEL, &mut rng, steps, warmup)
+        let (chain, acceptance_rate) = single_site_mh(FACTOR_MODEL, &mut rng, steps, warmup)
             .expect("Failed to execute SSMH with factor");
 
         assert_eq!(chain.len(), steps);
@@ -257,6 +265,13 @@ mod inference_algorithms_tests {
             error < TOLERANCE,
             "SSMH+factor estimated mean: {}, expected: {}. Error ({}) exceeds tolerance.",
             estimated_mean, EXACT_MEAN, error
+        );
+
+        // FACTOR_MODEL also has exactly one 'sample' site, same reasoning
+        // as in test_single_site_mh_convergence above.
+        assert!(
+            acceptance_rate > 0.0 && acceptance_rate <= 1.0,
+            "acceptance rate out of the (0, 1] range: {acceptance_rate}"
         );
     }
 
