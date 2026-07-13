@@ -37,7 +37,9 @@ pub fn run_lw<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<(RVal, f64
                 m = next_m;
             }
 
-            Msg::Factor(_addr, _w ,  next_m ) => {
+            Msg::Factor(_addr, w , mut next_m ) => {
+                next_m.log_w += w;
+                send(&mut next_m, RVal::Nil);
                 m = next_m;
             }
         }

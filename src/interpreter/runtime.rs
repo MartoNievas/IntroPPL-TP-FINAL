@@ -265,12 +265,10 @@ pub fn resume(mut m: Machine) -> Result<Msg, String> {
                 }
             }
 
-            Instr::FactorK(_addr) => {
+            Instr::FactorK(addr) => {
                 let val = m.v.pop().ok_or("Missing value on the value stack while evaluating FactorK continuation")?;
                 let w = as_f64(&val)?;
-
-                m.log_w += w;
-                m.v.push(RVal::Nil);
+                return Ok(Msg::Factor(addr, w, m));
             }
 
             Instr::Discard => {

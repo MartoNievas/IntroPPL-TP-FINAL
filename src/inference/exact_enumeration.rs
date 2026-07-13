@@ -66,7 +66,9 @@ pub fn enumerate_traces(program: &str, max_states: usize) -> Result<Vec<(RVal, f
                 }
             }
 
-            Msg::Factor(_addr, _w , mut next_m ) => {
+            Msg::Factor(_addr, w , mut next_m ) => {
+                next_m.log_w += w;
+                send(&mut next_m, RVal::Nil);
                 stack_machines.push(next_m);
             }
         }

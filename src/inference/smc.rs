@@ -287,6 +287,12 @@ fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Ms
                 send(&mut next_m, sample_val);
                 m = next_m;
             }
+            // New case 
+            Msg::Factor(_addr, w, mut next_m) => {
+                next_m.log_w += w;
+                send(&mut next_m, RVal::Nil);
+                m = next_m;
+            }
             // Once we hit an Observe or Done, return the message to the controller
             other => return Ok(other),
         }

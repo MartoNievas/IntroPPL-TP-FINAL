@@ -192,7 +192,9 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
 
             }
 
-            Msg::Factor(_addr, _val , next_m  ) => {
+            Msg::Factor(_addr, val , mut next_m  ) => {
+                log_p += val;
+                send(&mut next_m, RVal::Nil);
                 m = next_m;
             }
 
