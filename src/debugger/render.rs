@@ -60,7 +60,16 @@ fn draw_header(f: &mut Frame, area: Rect, app: &DebuggerApp) {
     f.render_widget(block, area);
 }
 
-fn draw_current(f: &mut Frame, area: Rect, app: &DebuggerApp) {}
+fn draw_current(f: &mut Frame, area: Rect, app: &DebuggerApp) {
+    let lines = match app.viewing_history() {
+        Some(i) => render_snapshot(&app.history()[i]),
+        None => render_live(app.paused()),
+    };
+
+    let block = Block::default().borders(Borders::ALL).title(" Current ");
+    let paragraph = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
+}
 
 fn render_live(paused: &PausedAt) -> Vec<Line<'static>> {
     match paused {
@@ -122,6 +131,7 @@ fn render_live(paused: &PausedAt) -> Vec<Line<'static>> {
             Line::from(format!("observed value: {value}")),
             Line::from(format!("log_prob: {log_prob:.4}")),
             Line::from(format!("log_w so far: {:.4}", machine.log_w)),
+            Line::from("[s] accept observed value and continue   [b] toggle breakpoint here"),
         ],
         PausedAt::Done { value, log_w } => vec![
             Line::from(Span::styled(

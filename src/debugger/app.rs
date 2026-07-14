@@ -193,7 +193,7 @@ impl DebuggerApp {
                 self.step()?;
                 let hit_breakpoint = matches!(
                     &self.paused,
-                    PausedAt::Sample { addr, .. } | PausedAt::Observe { addr, .. }
+                    PausedAt::Sample { addr, .. } | PausedAt::Observe { addr, .. } | PausedAt::Factor { addr, .. }
                         if self.breakpoints.contains(addr)
                 );
                 if hit_breakpoint || matches!(self.paused, PausedAt::Done { .. }) {
@@ -202,7 +202,7 @@ impl DebuggerApp {
             },
  
             Command::ToggleBreakpoint => {
-                if let PausedAt::Sample { addr, .. } | PausedAt::Observe { addr, .. } = &self.paused {
+                if let PausedAt::Sample { addr, .. } | PausedAt::Observe { addr, .. } | PausedAt::Factor { addr, .. } = &self.paused {
                     let addr = addr.clone();
                     if !self.breakpoints.insert(addr.clone()) {
                         self.breakpoints.remove(&addr);
@@ -234,6 +234,10 @@ impl DebuggerApp {
     // re-injecting the fixed value for `observe`), then calls resume()
     // again to find the next one. No-op if already at `Done`.
     fn step(&mut self) -> Result<(), String> {
+        if matches!(self.paused, PausedAt::Done { .. }) {
+            return Ok(());
+        }
+
         self.push_history_snapshot();
 
         let owned = std::mem::replace(

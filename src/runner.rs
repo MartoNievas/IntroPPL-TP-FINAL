@@ -25,6 +25,7 @@ use crate::inference::ssmh::single_site_mh;
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
 use crate::cli::{print_usage, Algorithm, Config};
+use crate::debugger::app::DebuggerApp;
 use crate::demos::build_demos;
 use crate::interpreter::{initial_machine, resume, Msg};
 use crate::stats::{
@@ -63,10 +64,8 @@ pub fn run(config: Config) {
             run_algorithm_on_model(algorithm, &model, &mut rng);
         }
         Config::Debug(file_path, algorithm) => {
-            //let model = load_model_file(&file_path);
-            //let mut rng = StdRng::seed_from_u64(42);
-            println!("Debug mode active");
-            //run_debug_term(&model, algorithm, rng);
+            let model = load_model_file(&file_path);
+            run_debug_mode(&model, algorithm);
         }
     }
 }
@@ -182,6 +181,34 @@ fn run_deterministic_model(file_path: &str, model: &str) {
     }
 
     println!("   (time: {:.2?})", start.elapsed());
+}
+
+// Runs a HOPPL program step by step in the terminal debugger: builds the
+// initial Machine, hands it to `DebuggerApp` and takes over the terminal
+// (raw mode + alternate screen) for the duration of the interactive
+// session. The terminal is always restored on the way out, whether the
+// debugger loop finished cleanly or returned an error.
+fn run_debug_mode(model: &str, algorithm: Algorithm) {
+    print_header(&format!("DEBUG MODE: {}", algorithm.label()));
+    println!("Model loaded:\n{}", model.trim());
+    println!();
+
+    let machine = match initial_machine(model) {
+        Ok(m) => m,
+        Err(e) => {
+            print_err(&format!("Error initializing the program: {e}"));
+            return;
+        }
+    };
+
+    let mut app = DebuggerApp::new(machine);
+    let mut terminal = ratatui::init();
+    let result = app.run_loop(&mut terminal);
+    ratatui::restore();
+
+    if let Err(e) = result {
+        print_err(&format!("Debugger error: {e}"));
+    }
 }
 
 fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
