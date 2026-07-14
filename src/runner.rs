@@ -157,7 +157,7 @@ fn run_deterministic_model(file_path: &str, model: &str) {
 
         Ok(Msg::Factor(addr, _ ,_ )) => {
             print_err(&format!(
-                "The program is not deterministic: found an 'observe' at address {addr:?}."
+                "The program is not deterministic: found an 'factor' at address {addr:?}."
             ));
             println!(
                 "   This mode is only for programs without 'sample'/'observe'/'factor'. Run with an inference algorithm instead:"
