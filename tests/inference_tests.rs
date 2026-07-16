@@ -154,7 +154,7 @@ mod inference_algorithms_tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (elbo_history, theta_opt) = run_bbvi(program, 150, 15, 0.05, &mut rng).unwrap();
+        let (elbo_history, theta_opt, _samples) = run_bbvi(program, 150, 15, 0.05, &mut rng).unwrap();
 
         let initial_elbo = elbo_history[0];
         let final_elbo = *elbo_history.last().unwrap();
@@ -336,7 +336,7 @@ mod inference_algorithms_tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let (elbo_history, theta_opt) = run_bbvi(program, 150, 15, 0.05, &mut rng)
+        let (elbo_history, theta_opt, _samples) = run_bbvi(program, 150, 15, 0.05, &mut rng)
             .expect("Failed to execute BBVI with factor");
 
         let initial_elbo = elbo_history[0];

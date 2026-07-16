@@ -158,7 +158,7 @@ pub fn run_smc<R: Rng + ?Sized>(
 }
 
 // Helper function for the static AST analysis that detects desynchronization in the SMC algorithm
-fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
+pub(crate) fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
 
     for form in forms {
         check_form(form)?;
@@ -278,7 +278,7 @@ fn check_form(form: &Form) -> Result<bool, String> {
 
 // Helper function to advance until the next 'Observe' or until the program finishes.
 // Intermediate samples are resolved automatically by sampling from the prior.
-fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Msg, String> {
+pub(crate) fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Msg, String> {
     loop {
         match resume(m)? {
             Msg::Sample(_addr, dist, mut next_m) => {
@@ -300,7 +300,7 @@ fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Ms
 }
 
 // Helper function for resampling: selects an index according to its categorical probabilities.
-fn sample_categorical<R: Rng + ?Sized>(probs: &[f64], rng: &mut R) -> usize {
+pub(crate) fn sample_categorical<R: Rng + ?Sized>(probs: &[f64], rng: &mut R) -> usize {
     let u: f64 = rng.random();
     let mut cumsum = 0.0;
     for (i, &p) in probs.iter().enumerate() {

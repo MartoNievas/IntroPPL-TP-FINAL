@@ -95,7 +95,7 @@ Esto descarga automáticamente todas las dependencias (crates) declaradas en `Ca
 
 ## Correr el proyecto
 
-El binario soporta cuatro modos de uso distintos:
+El binario soporta cinco modos de uso distintos:
 
 ### 1. Correr todas las demos hardcodeadas
 
@@ -153,6 +153,20 @@ cargo run -- <archivo.hoppl>
 Donde:
 
 - `<archivo.hoppl>` es la ruta a un archivo de texto con un programa determinisitico escrito en HOPPL.
+
+### 5. Depurar un modelo `.hoppl` paso a paso (modo debug)
+
+```bash
+cargo run -- debug <archivo.hoppl> <algoritmo>
+```
+
+Levanta una interfaz de terminal (TUI, con `ratatui`) que permite ejecutar el programa paso a paso en vez de correrlo de punta a punta. El `<algoritmo>` no es solo cosmético: cada uno de los 5 motores de inferencia tiene su propia noción de "paso", fiel a su algoritmo real (ver [Debugger Interactivo de Inferencia](#debugger-interactivo-de-inferencia-tui) en Extras). Por ejemplo:
+
+```bash
+cargo run -- debug modelos/mi_modelo.hoppl ssmh
+```
+
+`programs/` incluye modelos pensados específicamente para probar el modo debug con cada algoritmo: `coin_bias.hoppl` (SMC/LW, varios `observe` sincronizados), `line_fit.hoppl` (SSMH/BBVI, dos latentes continuas), `three_coins.hoppl` (Exact Enumeration, árbol de 8 ramas) y `multi_factor.hoppl` (dos `factor` consecutivos). Cada uno trae en un comentario el comando exacto para correrlo.
 
 ## Correr los tests
 
@@ -341,7 +355,7 @@ Notá que `y` puede usar `x` porque `let` enlaza sus variables de forma secuenci
   (cuadrado 4))       ; -> 16
 ```
 
-El lenguaje también soporta recursión, pero con un matiz importante: `let` no es un `letrec`. Cuando `(fn [...] cuerpo)` se evalúa, la closure captura el entorno tal como está en ese instante — y ese instante es *antes* de que `let` termine de enlazar el nombre de la función. Por eso, una función no puede llamarse a sí misma simplemente por su propio nombre dentro de un `let`.
+El lenguaje también soporta recursión, pero con un matiz importante: `let` no es un `letrec`. Cuando `(fn [...] cuerpo)` se evalúa, la closure captura el entorno tal como está en ese instante, que es *antes* de que `let` termine de enlazar el nombre de la función. Por eso, una función no puede llamarse a sí misma simplemente por su propio nombre dentro de un `let`.
 
 La forma estándar de lograr recursión en este caso es el truco clásico de **auto-aplicación**: la función recibe una copia de sí misma como argumento explícito, y se la vuelve a pasar en cada llamada recursiva. Con eso podemos escribir, por ejemplo, una distribución geométrica implementada recursivamente:
 
@@ -359,7 +373,7 @@ La forma estándar de lograr recursión en este caso es el truco clásico de **a
 
 `(geometrica geometrica)` se aplica a sí misma para producir la función real de un argumento (`fn [p] ...`), ya con `self` correctamente enlazado en su entorno porque, a diferencia del nombre en `let`, `self` es un parámetro de función y sí se resuelve normalmente en el momento de la llamada. Dentro del cuerpo, `((self self) p)` repite el mismo truco para la llamada recursiva.
 
-Esto también muestra algo importante del lenguaje: como `sample` puede devolver un valor distinto cada vez que se evalúa, la cantidad de veces que `geometrica` se llama a sí misma varía en cada ejecución — es un ejemplo simple de grafo de computación de **longitud variable**, uno de los requisitos centrales de un HOPPL.
+Esto también muestra algo importante del lenguaje: como `sample` puede devolver un valor distinto cada vez que se evalúa, la cantidad de veces que `geometrica` se llama a sí misma varía en cada ejecución. Es un ejemplo simple de grafo de computación de **longitud variable**, uno de los requisitos centrales de un HOPPL.
 
 ### 5. Efectos probabilísticos: `sample` y `observe`
 
@@ -401,7 +415,7 @@ para aproximar la distribución a posteriori de `p` usando Sequential Monte Carl
 
 ### 7. Condicionamiento suave con `factor`
 
-`observe` es en realidad un caso particular de una operación más general: sumar densidad de log-verosimilitud a la traza de ejecución. `observe` lo hace de forma indirecta — le pasás una distribución y un valor, y el motor calcula `log_prob(valor)` por vos. El operador `(factor <expr>)` te da acceso directo a ese mecanismo: suma el número que le pases, tal cual, al log-peso acumulado de la traza, sin necesidad de una distribución ni de un valor observado concreto.
+`observe` es en realidad un caso particular de una operación más general: sumar densidad de log-verosimilitud a la traza de ejecución. `observe` lo hace de forma indirecta, le pasás una distribución y un valor, y el motor calcula `log_prob(valor)` por vos. El operador `(factor <expr>)` te da acceso directo a ese mecanismo: suma el número que le pases, tal cual, al log-peso acumulado de la traza, sin necesidad de una distribución ni de un valor observado concreto.
 
 ```clojure
 (factor <expr>)
@@ -419,7 +433,7 @@ Esto es útil cuando lo que querés modelar no es "observé exactamente este val
     mu)
 ```
 
-La diferencia clave con `observe` es que `factor` no compara contra un dato exacto: te obliga a escribir vos mismo la función de densidad (o cualquier otra función de "qué tan bueno es este estado"), en vez de delegarla en una distribución con nombre. Esto habilita modelos donde la evidencia no es un punto fijo sino una preferencia continua — por ejemplo, penalizar configuraciones alejadas de un valor deseado sin fijar ese valor como una observación puntual:
+La diferencia clave con `observe` es que `factor` no compara contra un dato exacto: te obliga a escribir vos mismo la función de densidad (o cualquier otra función de "qué tan bueno es este estado"), en vez de delegarla en una distribución con nombre. Esto habilita modelos donde la evidencia no es un punto fijo sino una preferencia continua, por ejemplo, penalizar configuraciones alejadas de un valor deseado sin fijar ese valor como una observación puntual:
 
 ```clojure
 ; Preferimos que p este cerca de 0.5, sin observar ningun dato concreto.
@@ -429,7 +443,7 @@ La diferencia clave con `observe` es que `factor` no compara contra un dato exac
     p)
 ```
 
-**Importante:** a diferencia de `sample`, `factor` no le devuelve el control al motor de inferencia — no hay ninguna decisión estocástica que tomar, solo un número que sumar. Por eso podés usarlo con cualquiera de los algoritmos de inferencia soportados (`lw`, `ssmh`, `smc`) sin que la máquina se pause en ese punto. Como valor de retorno de la expresión, `(factor <expr>)` siempre produce `nil`, así que en general se usa como una sentencia intermedia dentro de un `let`, no como el valor final de un cuerpo.
+**Importante:** a diferencia de `sample`, `factor` no le devuelve el control al motor de inferencia: no hay ninguna decisión estocástica que tomar, solo un número que sumar. Por eso podés usarlo con cualquiera de los algoritmos de inferencia soportados (`lw`, `ssmh`, `smc`) sin que la máquina se pause en ese punto. Como valor de retorno de la expresión, `(factor <expr>)` siempre produce `nil`, así que en general se usa como una sentencia intermedia dentro de un `let`, no como el valor final de un cuerpo.
 
 ### 8. Próximos pasos
 
@@ -450,11 +464,11 @@ TP-FINAL-PPL
 |   |-- main.rs                 -> Punto de entrada y ejecutable de demostración
 |   |-- lib.rs                  -> Raíz de la librería que expone los módulos
 |   |-- cli.rs                  -> Parseo de argv y validación en Config (Demo, File, Deterministic, 
-|   |                              Invalid)
+|   |                              Debug, Invalid)
 |   |-- ui.rs                   -> Formateo de colores, headers y mensajes para impresión por terminal
 |   |-- demos.rs                -> Definición de las 7 demostraciones hardcodeadas del intérprete
 |   |-- runner.rs               -> Ejecución de los distintos modos: demos completas/particulares,    
-|   |                              archivo determinístico/no determinístico
+|   |                              archivo determinístico/no determinístico, y modo debug (TUI)
 |   |-- stats.rs                -> Estadística descriptiva y diagnósticos de convergencia (media, ESS, 
 |   |                              autocorrelación)
 |   |
@@ -472,13 +486,28 @@ TP-FINAL-PPL
 |   |   +-- runtime.rs          -> Intérprete, direcciones (Addresses) e interfaz de mensajes para el 
 |   |                              motor de inferencia
 |   |
-|   +-- inference/              -> Motores de inferencia probabilística
-|       |-- mod.rs              -> Exportaciones de algoritmos
-|       |-- bbvi.rs             -> Algoritmo: Black-Box Variational Inference (BBVI)
-|       |-- exact_enumeration.rs -> Algoritmo: Exact Enumeration
-|       |-- lw.rs               -> Algoritmo: Likelihood Weighting
-|       |-- smc.rs              -> Algoritmo: Sequential Monte Carlo (SMC)
-|       +-- ssmh.rs             -> Algoritmo: Single-Site Metropolis-Hastings
+|   |-- inference/              -> Motores de inferencia probabilística
+|   |   |-- mod.rs              -> Exportaciones de algoritmos
+|   |   |-- defaults.rs         -> Constantes compartidas (N de partículas, steps, etc.) entre el modo 
+|   |   |                          CLI y el modo debug
+|   |   |-- bbvi.rs             -> Algoritmo: Black-Box Variational Inference (BBVI)
+|   |   |-- exact_enumeration.rs -> Algoritmo: Exact Enumeration
+|   |   |-- lw.rs               -> Algoritmo: Likelihood Weighting
+|   |   |-- smc.rs              -> Algoritmo: Sequential Monte Carlo (SMC)
+|   |   +-- ssmh.rs             -> Algoritmo: Single-Site Metropolis-Hastings
+|   |
+|   +-- debugger/               -> Debugger interactivo de terminal (TUI, ratatui)
+|       |-- mod.rs              -> Exportaciones del módulo
+|       |-- app.rs              -> DebuggerApp: loop principal, historial, breakpoints, log de eventos
+|       |-- event.rs            -> Mapeo de teclas a comandos (step, continue, breakpoint, etc.)
+|       |-- render.rs           -> Paneles ratatui (header, panel actual, log, ayuda)
+|       +-- engine/             -> Un motor de "paso" por algoritmo de inferencia
+|           |-- mod.rs          -> Enum Engine que despacha al motor activo
+|           |-- lw.rs           -> Motor de step para Likelihood Weighting
+|           |-- enumeration.rs  -> Motor de step para Exact Enumeration
+|           |-- smc.rs          -> Motor de step para Sequential Monte Carlo
+|           |-- ssmh.rs         -> Motor de step para Single-Site Metropolis-Hastings
+|           +-- bbvi.rs         -> Motor de step para Black-Box Variational Inference
 |
 +-- tests/                      -> Pruebas unitarias y de integración
     |-- parser_tests.rs         -> Pruebas de validación sintáctica y AST
@@ -491,37 +520,35 @@ TP-FINAL-PPL
 
 ## 🦀 Lenguaje de Implementación: ¿Por qué Rust?
 
-Aunque la consigna del proyecto permitía utilizar lenguajes interpretados de alto nivel (como Python), se tomó la decisión arquitectónica de desarrollar el proyecto —incluyendo el *lexer*, el *parser* para la sintaxis del **HOPPL** (*Higher-Order Probabilistic Programming Language*) y el motor de evaluación— completamente desde cero en **Rust**. 
+Aunque la consigna permitía usar lenguajes interpretados de alto nivel como Python, decidí escribir todo el proyecto (el *lexer*, el *parser* de **HOPPL** y el motor de evaluación) desde cero en **Rust**. La decisión se apoya en cuatro razones concretas:
 
-Esta elección se fundamenta en cuatro pilares críticos que aportan ventajas significativas al diseño de lenguajes y a la computación probabilística:
+### 1. Pattern Matching y tipos algebraicos (ADTs) para el AST
+Un intérprete pasa la mayor parte del tiempo manipulando árboles de sintaxis abstracta (AST) y evaluando expresiones recursivas.
+* Los **enums** de Rust permiten modelar las expresiones del lenguaje (operaciones, closures, llamadas `sample`, `observe`, etc.) de forma directa.
+* El **Pattern Matching exhaustivo** (`match`) obliga al evaluador a cubrir todos los casos del AST. Si se agrega un nodo o una primitiva nueva, el compilador señala exactamente qué partes del evaluador quedaron sin actualizar.
 
-### 1. Pattern Matching y Tipos Algebraicos (ADTs) para el AST
-El diseño de un intérprete requiere manipular continuamente árboles de sintaxis abstracta (AST) y evaluar expresiones recursivas. 
-* Los **Enums potentes (tipos algebraicos)** de Rust permiten modelar las expresiones del lenguaje probabilístico (operaciones, closures, llamadas `sample`, `observe`, etc.) de forma natural y autoexplicativa.
-* El **Pattern Matching exhaustivo** (`match`) garantiza que el evaluador maneje absolutamente todos los casos posibles y ramificaciones del AST. Si se agrega un nuevo nodo o primitiva al lenguaje, el compilador nos alertará exactamente de qué partes del evaluador necesitan ser actualizadas.
+### 2. Seguridad de tipos y errores detectados en tiempo de compilación
+A diferencia de lenguajes con tipado dinámico, donde los errores de lógica o de memoria aparecen recién en tiempo de ejecución (a veces a mitad de una simulación larga), el sistema de tipos y el *Borrow Checker* de Rust atajan buena parte de esos problemas antes de correr el programa:
+* **Sin referencias nulas:** usar `Option<T>` y `Result<T, E>` obliga a manejar de forma explícita los errores sintácticos del *Parser* y los semánticos del *Evaluador*.
+* **Seguridad de memoria sin Garbage Collector:** se evitan fugas de memoria y errores de segmentación sin pagar el costo de las pausas de un recolector de basura.
 
-### 2. Seguridad de Tipos y Prevención de Errores en Tiempo de Compilación
-A diferencia de lenguajes interpretados o con tipado dinámico donde los errores de lógica o de memoria explotan en tiempo de ejecución (a mitad de una simulación larga), el estricto sistema de tipos y el *Borrow Checker* de Rust actúan como una primera línea de defensa:
-* **Cero excepciones en tiempo de ejecución por referencias nulas:** El uso de tipos monádicos como `Option<T>` y `Result<T, E>` hace que el manejo de errores sintácticos en el *Parser* y errores semánticos en el *Evaluador* sea explícito y predecible.
-* **Seguridad de memoria sin Garbage Collector (GC):** Se evitan fugas de memoria y errores de segmentación sin pagar el costo de las pausas en tiempo de ejecución de un recolector de basura.
+### 3. Rendimiento en los algoritmos de inferencia
+Los algoritmos implementados (*Sequential Monte Carlo*, *Metropolis-Hastings*, *Likelihood Weighting*) hacen bastante trabajo computacional:
+* En **SMC**, por ejemplo, hay que mantener, evaluar y clonar miles de "partículas" (trazas de ejecución) en paralelo y hacer re-muestreos (*resampling*) todo el tiempo.
+* Al compilar a código de máquina nativo con abstracciones de costo cero (*zero-cost abstractions*), Rust corre miles de pasos de MCMC o partículas de SMC en una fracción del tiempo que tomaría en Python, con un rendimiento cercano al de C o C++.
 
-### 3. Rendimiento y Eficiencia en Algoritmos de Inferencia
-Los algoritmos implementados en este proyecto (*Sequential Monte Carlo*, *Metropolis-Hastings* y *Likelihood Weighting*) son de naturaleza altamente intensiva a nivel computacional:
-* Por ejemplo, en **Sequential Monte Carlo (SMC)** es necesario mantener, evaluar y clonar miles de "partículas" (trazas de ejecución de los grafos probabilísticos) en paralelo y realizar re-muestreos (*resampling*) constantes.
-* Al ser un lenguaje compilado a código de máquina nativo con abstracciones de costo cero (*zero-cost abstractions*), Rust ejecuta simulaciones de miles de pasos de MCMC o partículas SMC en una fracción del tiempo que le tomaría a lenguajes interpretados como Python, logrando una eficiencia del orden de C o C++.
-
-### 4. Ergonomía para la Estructura de Traza (Trace Tracking)
-Para implementar algoritmos como **Single-Site Metropolis-Hastings**, es indispensable mantener una "traza" (*Trace*) que asocie de manera unívoca cada llamada condicional `sample` a una dirección de ejecución (*Address*). La propiedad de pertenencia (*Ownership*) y el clonado explícito de datos en Rust facilitan la creación de un sistema de seguimiento de direcciones limpio y sin efectos secundarios inesperados al modificar el estado de las variables aleatorias.
+### 4. Manejo de la traza (Trace Tracking)
+Implementar algoritmos como **Single-Site Metropolis-Hastings** requiere mantener una "traza" (*Trace*) que asocie cada llamada `sample` con su dirección de ejecución (*Address*). El sistema de *Ownership* de Rust, junto con el clonado explícito de datos, hace más simple llevar ese seguimiento de direcciones sin efectos secundarios inesperados al modificar el estado de las variables aleatorias.
 
 ## Aclaraciones Técnicas: CPS Funcional Puro vs. Máquina CEK
 
-Durante las iteraciones de diseño de este proyecto, y contemplando una sugerencia del profesor, se evaluó fuertemente la posibilidad de implementar el evaluador de expresiones utilizando **Continuation-Passing Style (CPS) funcional puro**. En la literatura clásica de Lisp, esto se logra pasando funciones de orden superior (*closures*) como continuaciones para pausar y reanudar el flujo. 
+Durante el diseño del proyecto, y a partir de una sugerencia del profesor, evalué implementar el evaluador de expresiones con **Continuation-Passing Style (CPS) funcional puro**. En la literatura clásica de Lisp esto se logra pasando funciones de orden superior (*closures*) como continuaciones para pausar y reanudar el flujo.
 
-Sin embargo, se tomó la decisión arquitectónica final de prescindir del CPS puro y utilizar en su lugar una **Máquina CEK (Control, Environment, Continuation)**, la cual es esencialmente la "defuncionalización" matemática del CPS. Esta decisión resuelve dos problemas críticos que presenta Rust:
+Terminé descartando el CPS puro y usando en su lugar una **Máquina CEK (Control, Environment, Continuation)**, que es la "defuncionalización" matemática del CPS. La decisión resuelve dos problemas concretos que aparecen al hacer esto en Rust:
 
-1. **La barrera de la clonación (Función `fork` para SMC y MCMC):** Este es el factor decisivo. Algoritmos como Sequential Monte Carlo requieren pausar la ejecución en cada instrucción `observe`, **clonar** el estado de la máquina en múltiples partículas, y reanudar de forma paralela. En Rust, es notoriamente complejo y limitante clonar un *closure* arbitrario oculto detrás de *Traits* dinámicos (ej. `Box<dyn Fn>`), ya que el compilador desconoce el tamaño y el contenido del entorno capturado en tiempo de ejecución. Al usar una Máquina CEK, la "continuación" pasa de ser una función opaca a una simple estructura de datos concreta (un vector de enums `Vec<Instr>`), haciendo que toda la máquina sea trivial y rápidamente clonable mediante `#[derive(Clone)]`.
+1. **La barrera de la clonación (función `fork` para SMC y MCMC):** este fue el factor decisivo. Algoritmos como Sequential Monte Carlo necesitan pausar la ejecución en cada `observe`, **clonar** el estado de la máquina en múltiples partículas y reanudar en paralelo. En Rust es complejo clonar un *closure* arbitrario escondido detrás de *Traits* dinámicos (por ejemplo `Box<dyn Fn>`), porque el compilador no conoce el tamaño ni el contenido del entorno capturado en tiempo de ejecución. Con una Máquina CEK, la "continuación" deja de ser una función opaca y pasa a ser una estructura de datos concreta (un vector de enums `Vec<Instr>`), que se puede clonar con un simple `#[derive(Clone)]`.
 
-2. **Tipos Opacos y TCO (Tail Call Optimization):** Implementar CPS puro requiere construir tipos de retorno recursivos y encadenar *closures*. En Rust, lidiar con los tiempos de vida (*lifetimes*) de referencias dentro de múltiples *closures* anidados entorpece enormemente la legibilidad y mantenibilidad del evaluador. Además, al carecer Rust de optimización de llamadas de cola (TCO) garantizada, un CPS funcional puro para programas con recursión probabilística profunda terminaría provocando irremediablemente un *Stack Overflow*. La pila explícita de la máquina CEK maneja iterativamente el flujo en el *Heap*, evadiendo este problema por completo.
+2. **Tipos opacos y TCO (Tail Call Optimization):** implementar CPS puro implica construir tipos de retorno recursivos y encadenar *closures*. En Rust, lidiar con los *lifetimes* de referencias dentro de closures anidados complica bastante la legibilidad y el mantenimiento del evaluador. Además, como Rust no garantiza optimización de llamadas de cola (TCO), un CPS puro con recursión probabilística profunda terminaría en un *Stack Overflow*. La pila explícita de la máquina CEK maneja el flujo de forma iterativa en el *Heap*, evitando ese problema.
 
 # Extras
 
@@ -597,9 +624,9 @@ El módulo expone una interfaz limpia para ser consumida por el evaluador o los 
 
 En el algoritmo de inferencia **Sequential Monte Carlo (SMC)** (o Filtro de Partículas), todas las partículas representan trazas de ejecución concurrentes que deben avanzar de forma sincronizada. Específicamente, cada vez que las partículas se topan con una instrucción `observe`, deben detenerse al unísono (punto de sincronización) para evaluar la verosimilitud del valor observado, actualizar sus pesos acumulados y participar en el proceso coordinado de re-muestreo multinomial (*resampling*).
 
-Si alguna partícula tomara un camino alternativo donde no ejecuta un `observe` que las demás sí ejecutan (o viceversa), se produciría una **desincronización catastrófica** de la traza, rompiendo la consistencia matemática del algoritmo.
+Si alguna partícula tomara un camino alternativo donde no ejecuta un `observe` que las demás sí ejecutan (o viceversa), la traza se desincroniza y rompe la consistencia matemática del algoritmo.
 
-Para mitigar este riesgo de forma absoluta, este proyecto implementa un sistema de **defensa en dos capas**: una capa preventiva de **análisis estático** antes de la ejecución y una salvaguarda de **detección dinámica** en tiempo de ejecución.
+Para evitar este riesgo, el proyecto implementa **dos capas de defensa**: un **análisis estático** antes de la ejecución y una **detección dinámica** en tiempo de ejecución.
 
 ### 1. El Análisis Estático Previo a la Ejecución
 
@@ -643,7 +670,7 @@ La verificación se compone de dos funciones auxiliares principales:
    * **Error reportado:** *"SMC Static Analysis Error: Found an 'observe' statement inside a 'fn' definition. Functions can be called dynamically, which breaks SMC synchronization guarantees."*
 
 3. **Propagación en Bloques `let`:**
-   Rastrea y propaga meticulosamente la presencia de `observe` tanto en los valores asociados a variables como en las expresiones que conforman el cuerpo del bloque `let`, asegurando que no se enmascare ninguna instrucción.
+   Rastrea la presencia de `observe` tanto en los valores asociados a variables como en las expresiones que conforman el cuerpo del bloque `let`, para que ninguna instrucción quede sin detectar.
 
 ---
 
@@ -666,11 +693,11 @@ for msg in messages {
 }
 ```
 
-Gracias a este esquema híbrido, el motor de inferencia garantiza una ejecución del algoritmo SMC 100% matemáticamente rigurosa, proporcionando un diagnóstico inmediato del error al desarrollador y evitando simulaciones inútiles o silenciosamente incorrectas.
+Con este esquema, cualquier desincronización se detecta antes o durante la ejecución, con un diagnóstico inmediato en vez de dejar correr una simulación que daría resultados incorrectos sin avisar.
 
 ## Algoritmos de Inferencia Extra
 
-Como extra en el motor de inferencia del proyecto también cubrí 2 algoritmos de inferencia adicionales vistos durante la cursada, lo que demuestra la versatilidad de la máquina virtual CEK para adaptarse a diferentes paradigmas estadísticos:
+Como extra, el motor de inferencia también cubre 2 algoritmos adicionales vistos durante la cursada. La misma máquina virtual CEK sirve para los dos, sin cambios en su diseño:
 
 ### 1. Black-Box Variational Inference (BBVI)
 
@@ -695,12 +722,64 @@ Se trata de un método de inferencia **100% determinista y exacto**. En lugar de
 
 **Nota:** A diferencia de **BBVI** este algoritmo de inferencia no se menciona de manera explícita en el libro, pero fue visto en clase, esto es debido a su poca aplicabilidad en casos reales.
 
+## Debugger Interactivo de Inferencia (TUI)
+
+Se implementó un debugger de terminal (`src/debugger/`, construido con **ratatui** + **crossterm**) que permite ejecutar cualquier modelo HOPPL paso a paso en vez de correrlo de punta a punta:
+
+```bash
+cargo run -- debug <archivo.hoppl> <algoritmo>
+```
+
+La TUI se organiza en paneles (`src/debugger/render.rs`): un header con el estado, un panel **Model** que muestra el código fuente del programa que se está depurando (para tener siempre a la vista qué modelo se está ejecutando, sin tener que volver al archivo), el panel **Current** con el estado puntual del motor activo, un **Event log** con el historial de pasos, y un footer con los controles.
+
+### El problema: no todos los algoritmos "pausan" de la misma forma
+
+Un debugger ingenuo que simplemente pausa la máquina CEK en cada `sample`/`observe`/`factor` alcanza para **Likelihood Weighting** (es literalmente una única traza lineal), pero no describe la ejecución real de los otros cuatro algoritmos:
+
+* **Exact Enumeration** no es una traza sino un árbol: en cada `sample` se bifurca una rama por cada valor del soporte finito.
+* **SMC** avanza N partículas en lockstep, sincronizadas en cada `observe`, con resampling entre sincronizaciones: no hay "una" traza que pausar.
+* **SSMH** no pausa en efectos: cada iteración re-corre el programa completo proponiendo un valor nuevo en una dirección y acepta/rechaza con Metropolis-Hastings.
+* **BBVI** es optimización de gradiente por lotes de trazas: no hay direcciones que pausar, sólo iteraciones de entrenamiento.
+
+Por eso, en vez de un único stepper genérico, `src/debugger/engine/` define un motor de "paso" por algoritmo (`lw.rs`, `enumeration.rs`, `smc.rs`, `ssmh.rs`, `bbvi.rs`), despachados mediante un `enum Engine` cerrado con `match` exhaustivo, la misma preferencia por **enums + pattern matching** sobre `Box<dyn Trait>` que ya se explicó en la sección de [CPS Funcional Puro vs. Máquina CEK](#aclaraciones-técnicas-cps-funcional-puro-vs-máquina-cek). Cada motor reutiliza la lógica real del algoritmo correspondiente en `src/inference/` (expuesta como `pub(crate)`) en lugar de reimplementarla, así el modo debug nunca diverge del modo de ejecución normal.
+
+Qué significa "un paso" (`s`) en cada motor:
+
+| Algoritmo | Un paso... |
+|---|---|
+| Likelihood Weighting | Avanza el próximo efecto (`sample`/`observe`/`factor`) de la traza. |
+| Exact Enumeration | En cada `sample`, elegís con `↑`/`↓` qué valor del soporte finito explorar; las ramas hermanas quedan en una pila pendiente para explorarlas después. |
+| SMC | Corre un round de sincronización completo: todas las partículas hasta el próximo `observe` (o el final), con resampling multinomial y ESS del round. |
+| Single-Site MH | Corre una iteración completa de Metropolis-Hastings: propone un valor nuevo en una dirección al azar y muestra el `log_alpha` y el accept/reject. |
+| BBVI | Corre un paso completo de optimización Adam sobre un lote de trazas, mostrando el ELBO y los parámetros variacionales `θ`. |
+
+### Qué se muestra al terminar (`Done`)
+
+Al llegar al final, cada motor reporta la misma estimación que reportaría el modo no interactivo (`cargo run -- <archivo> <algoritmo>`), calculada con las mismas funciones de `src/stats.rs` (`sample_mean_std_err`, `mcmc_mean_std_err_ess`, `ci95_margin`), reutilizadas a través de un helper común (`posterior_summary_lines` en `src/debugger/engine/mod.rs`) para que los cuatro paneles no diverjan entre sí ni del modo CLI:
+
+| Algoritmo | Qué reporta al terminar |
+|---|---|
+| SMC | Media estimada ± error estándar y CI 95%, sobre las partículas finales. |
+| Single-Site MH | Media, CI 95% y ESS ajustado por autocorrelación, sobre la cadena post-warmup. |
+| BBVI | Media posterior (vía la guía optimizada) ± error estándar y CI 95%, sobre el último lote de trazas. |
+| Exact Enumeration | Tabla completa P(valor) más la media ponderada por la PMF exacta (cuando el resultado es numérico), más informativa que una media sola ya que no es una aproximación. |
+| Likelihood Weighting | Solo el resultado y el `log_w` de esa traza puntual. A diferencia de los otros cuatro, el motor de debug de LW pausa una única traza lineal en vez de correr las N partículas del modo no interactivo, así que no hay una media a posteriori que promediar. |
+
+Si el resultado del modelo no es numérico (por ejemplo, devuelve un booleano), en vez de la media se muestra un desglose de frecuencias por valor.
+
+### Controles
+
+* `s`: avanzar un paso.
+* `c`: continuar automáticamente hasta el próximo breakpoint o el final (o, en SSMH/BBVI, hasta el presupuesto de pasos configurado, ya que un chain de MCMC o un loop de optimización no terminan solos).
+* `b`: alternar un breakpoint en la dirección actual (no aplica en BBVI, que no tiene direcciones donde pausar).
+* `↑` / `↓`: elegir la rama resaltada (sólo tiene efecto en Exact Enumeration).
+* `←` / `→`: navegar hacia atrás/adelante en el historial ya explorado (de solo lectura).
+* `q` / `Esc`: salir.
+
 ## Futuras Características: Hacia una Plataforma de Experimentación Probabilística
 
-Para elevar HOPPL de ser una herramienta de demostración a una plataforma de investigación y enseñanza en estadística computacional, se han identificado las siguientes líneas de trabajo futuro:
+Había identificado dos líneas de trabajo futuro para el proyecto, por fuera de lo pedido en la consigna. Las dos ya están implementadas:
 
-### 1. Debugger de Inferencia y Visualización de Trazas
-Implementar un modo de ejecución paso a paso que permita inspeccionar el estado interno de la máquina CEK. Esta característica permitirá visualizar en tiempo real cómo se actualizan los pesos de las partículas en los algoritmos de inferencia ante cada observación.
-* **Valor Pedagógico:** Desmitifica el proceso de inferencia, permitiendo al estudiante comprender que los resultados probabilísticos son el producto de ajustes matemáticos incrementales sobre las partículas, en lugar de un proceso opaco.
-
-> **Nota:** el operador de condicionamiento suave `factor` (originalmente listado acá como característica futura) ya fue implementado — ver [Tutorial, sección 7](#7-condicionamiento-suave-con-factor) y la demo 7 (`cargo run -- 7`).
+> **Nota:** el operador de condicionamiento suave `factor` (originalmente listado acá como característica futura) ya fue implementado. Ver [Tutorial, sección 7](#7-condicionamiento-suave-con-factor) y la demo 7 (`cargo run -- 7`).
+>
+> **Nota:** el debugger de inferencia y visualización de trazas (originalmente el ítem 1 de esta sección) también ya fue implementado. Ver [Debugger Interactivo de Inferencia (TUI)](#debugger-interactivo-de-inferencia-tui) y el modo 5 de [Correr el proyecto](#5-depurar-un-modelo-hoppl-paso-a-paso-modo-debug).

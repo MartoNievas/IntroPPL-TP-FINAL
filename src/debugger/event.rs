@@ -12,9 +12,11 @@ use::crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
-    Step,             // 's' or Down arrow: advance exactly one effect
+    Step,             // 's': advance exactly one unit of work
     Continue,         // 'c': auto-run until the next breakpoint or Done
     ToggleBreakpoint, // 'b': toggle a breakpoint at the current address
+    SelectPrev,       // Up arrow: move the highlighted choice (Exact Enumeration only)
+    SelectNext,       // Down arrow: move the highlighted choice (Exact Enumeration only)
     Back,             // Left arrow: view the previous pause point (read-only)
     Forward,          // Right arrow: move forward in history playback
     Quit,             // 'q' or Esc
@@ -38,9 +40,11 @@ pub fn next_command() -> Result<Option<Command>, std::io::Error> {
         }
 
         let cmd = match key.code {
-            KeyCode::Char('s') | KeyCode::Down => Command::Step,
+            KeyCode::Char('s') => Command::Step,
             KeyCode::Char('c') => Command::Continue,
             KeyCode::Char('b') => Command::ToggleBreakpoint,
+            KeyCode::Up => Command::SelectPrev,
+            KeyCode::Down => Command::SelectNext,
             KeyCode::Left => Command::Back,
             KeyCode::Right => Command::Forward,
             KeyCode::Char('q') | KeyCode::Esc => Command::Quit,

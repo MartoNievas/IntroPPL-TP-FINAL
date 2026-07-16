@@ -1,0 +1,11 @@
+; tres monedas discretas (8 trazas posibles), observamos evidencia de que
+; su suma es cercana a 2. arbol de ramas mas grande que two_coins.hoppl,
+; util para probar el selector de ramas del debug de exact enumeration
+; ([n]/[p] para moverse entre las 8 hojas) ademas de breakpoints por sitio.
+; uso: cargo run -- debug programs/three_coins.hoppl enum
+(let [a (if (sample (bernoulli 0.5)) 1 0)
+      b (if (sample (bernoulli 0.5)) 1 0)
+      c (if (sample (bernoulli 0.5)) 1 0)
+      suma (+ a (+ b c))]
+  (observe (normal 2 1) suma)
+  suma)

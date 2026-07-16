@@ -17,6 +17,10 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 
 use crate::inference::bbvi::run_bbvi;
+use crate::inference::defaults::{
+    BBVI_LR, BBVI_SAMPLES, BBVI_STEPS, ENUM_MAX_TRACES, N_PARTICLES_LW, N_PARTICLES_SMC,
+    SSMH_STEPS, SSMH_WARMUP,
+};
 use crate::inference::exact_enumeration::{enumerate_traces, posterior_table};
 use crate::inference::lw::likelihood_weighting;
 use crate::inference::smc::run_smc;
@@ -103,6 +107,9 @@ fn run_demos(selected: Option<usize>) {
         println!(
             "Tip: run `cargo run -- <file.hoppl> <algorithm>` to run your own probabilistic model."
         );
+        println!(
+            "Tip: run `cargo run -- debug <file.hoppl> <algorithm>` to run your own probabilistic model in debug mode."
+        );
     }
 }
 
@@ -184,24 +191,20 @@ fn run_deterministic_model(file_path: &str, model: &str) {
 }
 
 // Runs a HOPPL program step by step in the terminal debugger: builds the
-// initial Machine, hands it to `DebuggerApp` and takes over the terminal
-// (raw mode + alternate screen) for the duration of the interactive
-// session. The terminal is always restored on the way out, whether the
-// debugger loop finished cleanly or returned an error.
+// algorithm-specific `Engine` (see debugger::engine) for whichever
+// inference algorithm was chosen, hands it to `DebuggerApp` and takes
+// over the terminal (raw mode + alternate screen) for the duration of the
+// interactive session. The terminal is always restored on the way out,
+// whether the debugger loop finished cleanly or returned an error.
 fn run_debug_mode(model: &str, algorithm: Algorithm) {
-    print_header(&format!("DEBUG MODE: {}", algorithm.label()));
-    println!("Model loaded:\n{}", model.trim());
-    println!();
-
-    let machine = match initial_machine(model) {
-        Ok(m) => m,
+    let mut app = match DebuggerApp::new(model, algorithm) {
+        Ok(app) => app,
         Err(e) => {
-            print_err(&format!("Error initializing the program: {e}"));
+            print_err(&format!("Error initializing the debugger: {e}"));
             return;
         }
     };
 
-    let mut app = DebuggerApp::new(machine);
     let mut terminal = ratatui::init();
     let result = app.run_loop(&mut terminal);
     ratatui::restore();
@@ -212,15 +215,6 @@ fn run_debug_mode(model: &str, algorithm: Algorithm) {
 }
 
 fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
-    const N_PARTICLES_LW: usize = 5000;
-    const N_PARTICLES_SMC: usize = 2000;
-    const SSMH_STEPS: usize = 4000;
-    const SSMH_WARMUP: usize = 1000;
-    const BBVI_STEPS: usize = 250;
-    const BBVI_SAMPLES: usize = 20;
-    const BBVI_LR: f64 = 0.05;
-    const ENUM_MAX_TRACES: usize = 100000;
-
     print_header(&format!("FILE MODE: {}", algorithm.label()));
     println!("Model loaded:\n{}", model.trim());
     println!();
@@ -330,7 +324,7 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                 "Optimizing ELBO with Adam (Steps: {BBVI_STEPS}, Samples/Batch: {BBVI_SAMPLES}, LR: {BBVI_LR})..."
             );
             match run_bbvi(model, BBVI_STEPS, BBVI_SAMPLES, BBVI_LR, rng) {
-                Ok((elbo_history, theta_opt)) => {
+                Ok((elbo_history, theta_opt, samples)) => {
                     let elbo_inicial = elbo_history.first().unwrap();
                     let elbo_final = elbo_history.last().unwrap();
                     let delta = elbo_final - elbo_inicial;
@@ -352,6 +346,24 @@ fn run_algorithm_on_model(algorithm: Algorithm, model: &str, rng: &mut StdRng) {
                     for (addr, params) in theta_opt {
                         let fmt_addr = addr.join("/");
                         println!("      Address [{fmt_addr}]: {params:?}");
+                    }
+
+                    // Posterior-predictive estimate: the program's return
+                    // value on the last (fully optimized) guide's samples.
+                    println!();
+                    if samples.iter().all(is_numeric) {
+                        let (mean, std_err) = sample_mean_std_err(&samples);
+                        let margin = ci95_margin(std_err);
+                        print_ok(&format!(
+                            "Estimated posterior mean (via guide): {mean:.4} ± {std_err:.4}"
+                        ));
+                        print_ok(&format!(
+                            "95% CI: [{:.4}, {:.4}]",
+                            mean - margin,
+                            mean + margin
+                        ));
+                    } else {
+                        print_categorical_unweighted(&samples);
                     }
                 }
                 Err(e) => print_err(&format!("Failure in BBVI: {e}")),

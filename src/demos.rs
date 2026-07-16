@@ -19,8 +19,8 @@ use crate::inference::ssmh::single_site_mh;
 use term_table::{row::Row, table_cell::*, Table, TableStyle};
 
 use crate::stats::{
-    ci95_margin, effective_sample_size, mcmc_mean_std_err_ess, sample_mean_std_err,
-    weighted_mean_var,
+    ci95_margin, effective_sample_size, is_numeric, mcmc_mean_std_err_ess,
+    print_categorical_unweighted, sample_mean_std_err, weighted_mean_var,
 };
 use crate::ui::{fmt_log_mass, print_err, print_header, print_ok, print_warn};
 
@@ -253,7 +253,7 @@ pub fn demo_bbvi(rng: &mut StdRng) {
         );
 
         match run_bbvi(model, steps, n_samples, lr, rng) {
-            Ok((elbo_history, theta_opt)) => {
+            Ok((elbo_history, theta_opt, samples)) => {
                 let elbo_inicial = elbo_history.first().unwrap();
                 let elbo_final = elbo_history.last().unwrap();
                 let delta = elbo_final - elbo_inicial;
@@ -273,6 +273,22 @@ pub fn demo_bbvi(rng: &mut StdRng) {
                 for (addr, params) in theta_opt {
                     let fmt_addr = addr.join("/");
                     println!("      Address [{fmt_addr}]: {params:?}");
+                }
+
+                println!();
+                if samples.iter().all(is_numeric) {
+                    let (mean, std_err) = sample_mean_std_err(&samples);
+                    let margin = ci95_margin(std_err);
+                    print_ok(&format!(
+                        "Estimated posterior mean (via guide): {mean:.4} ± {std_err:.4}"
+                    ));
+                    print_ok(&format!(
+                        "95% CI: [{:.4}, {:.4}]",
+                        mean - margin,
+                        mean + margin
+                    ));
+                } else {
+                    print_categorical_unweighted(&samples);
                 }
 
                 println!(

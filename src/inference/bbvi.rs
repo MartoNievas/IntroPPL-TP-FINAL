@@ -16,14 +16,14 @@ use rand_distr::num_traits::{Pow};
 
 
 /// Internal structure to store the result of a trace sampled from the guide.
-struct SampleResult {
+pub(crate) struct SampleResult {
     pub val: RVal,
     pub elbo_sample: f64,
     pub scores: HashMap<Addr, Vec<f64>>,
 }
 
 // Adam optimizer for gradient ascent (maximizing the ELBO)
-struct AdamOptimizer {
+pub(crate) struct AdamOptimizer {
     m: HashMap<Addr, Vec<f64>>,
     v: HashMap<Addr, Vec<f64>>,
     beta1: f64,
@@ -35,14 +35,18 @@ struct AdamOptimizer {
 
 
 // Runs the Black-Box Variational Inference algorithm.
-// Returns the ELBO convergence history and the optimized variational parameters θ.
+// Returns the ELBO convergence history, the optimized variational
+// parameters θ, and a posterior-predictive sample batch: the program's
+// return value on each of the last step's traces, drawn from the final
+// (optimized) guide -- this is BBVI's analogue of the sample population
+// the other algorithms report a posterior estimate from.
 pub fn run_bbvi<R: Rng + ?Sized>(
     program: &str,
     steps: usize,
     n_samples: usize, // Samples per gradient step to reduce variance (e.g., 10 to 20)
     lr: f64,          // Learning rate for Adam (e.g., 0.05)
     rng: &mut R,
-) -> Result<(Vec<f64>, HashMap<Addr, Vec<f64>>), String> {
+) -> Result<(Vec<f64>, HashMap<Addr, Vec<f64>>, Vec<RVal>), String> {
     if n_samples == 0 {
         return Err("BBVI Error: 'n_samples' (batch size per optimization step) must be strictly greater than 0.".into());
     }
@@ -52,16 +56,19 @@ pub fn run_bbvi<R: Rng + ?Sized>(
     let mut theta: HashMap<Addr, Vec<f64>> = HashMap::new();
     let mut elbo_history = Vec::with_capacity(steps);
     let mut optimizer = AdamOptimizer::new(lr);
+    let mut last_batch_vals = Vec::with_capacity(n_samples);
 
     for _step in 0..steps {
         let mut step_elbos = Vec::with_capacity(n_samples);
         let mut step_scores = Vec::with_capacity(n_samples);
+        last_batch_vals.clear();
 
         // Collect N independent traces by sampling from the current guides
         for _ in 0..n_samples {
             let res = run_bbvi_sample(base_m.fork(), &mut guides, &mut theta, rng)?;
             step_elbos.push(res.elbo_sample);
             step_scores.push(res.scores);
+            last_batch_vals.push(res.val);
         }
 
         // Compute the batch mean ELBO (the bound we want to maximize)
@@ -89,11 +96,11 @@ pub fn run_bbvi<R: Rng + ?Sized>(
         optimizer.step(&mut theta, &grad_accum);
     }
 
-    Ok((elbo_history, theta))
+    Ok((elbo_history, theta, last_batch_vals))
 }
 
 impl AdamOptimizer {
-    fn new(lr: f64) -> Self {
+    pub(crate) fn new(lr: f64) -> Self {
         AdamOptimizer {
             m: HashMap::new(),
             v: HashMap::new(),
@@ -106,7 +113,7 @@ impl AdamOptimizer {
     }
 
     // Performs a gradient ascent step (theta_new = theta_old + lr * Adam(∇ELBO)).
-    fn step(&mut self, theta: &mut HashMap<Addr, Vec<f64>>, grads: &HashMap<Addr, Vec<f64>>) {
+    pub(crate) fn step(&mut self, theta: &mut HashMap<Addr, Vec<f64>>, grads: &HashMap<Addr, Vec<f64>>) {
         self.t += 1;
         let t_f64 = self.t as f64;
 
@@ -140,7 +147,7 @@ impl AdamOptimizer {
 
 
 // Runs a single trajectory of the program, sampling from the guide distributions q(x, theta)
-fn run_bbvi_sample<R: Rng + ?Sized> (
+pub(crate) fn run_bbvi_sample<R: Rng + ?Sized> (
     mut m: Machine,
     guides: &mut HashMap<Addr, Distribution>,
     theta: &mut HashMap<Addr, Vec<f64>>,
@@ -204,16 +211,8 @@ fn run_bbvi_sample<R: Rng + ?Sized> (
                 m = next_m;
             }
 
-            Msg::Done(val, finish_machine) => {
-                // finish_machine.log_w only ever accumulates contributions
-                // from `factor` calls: `observe` above adds straight to
-                // log_p by hand instead of touching Machine::log_w, so
-                // log_w stays untouched by anything except factor. Without
-                // folding it in here, any factor() in the model would be
-                // invisible to both the ELBO estimate and the score-function
-                // gradient's reward term, since factor never emits a Msg
-                // for this loop to intercept in the first place.
-                let elbo_sample = log_p + finish_machine.log_w - log_q;
+            Msg::Done(val, _finish_machine) => {
+                let elbo_sample = log_p - log_q;
                 return Ok(SampleResult {
                     val,
                     elbo_sample,

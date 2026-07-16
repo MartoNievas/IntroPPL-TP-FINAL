@@ -1,0 +1,11 @@
+; sesgo de una moneda: p ~ Beta(2, 2), observamos 3 caras y 1 ceca.
+; el posterior teorico es Beta(5, 3), media ~0.625.
+; pensado para debug con SMC (4 observes sincronizados -> 4 rondas de
+; resincronizacion de particulas) y con LW (4 pasos de observe seguidos).
+; uso: cargo run -- debug programs/coin_bias.hoppl smc
+(let [p (sample (beta 2.0 2.0))]
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) true)
+    (observe (bernoulli p) false)
+    p)

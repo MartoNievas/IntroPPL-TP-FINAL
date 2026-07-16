@@ -1,0 +1,12 @@
+; regresion lineal simple: pendiente m y ordenada b, ambas continuas.
+; observamos dos puntos ruidosos de la recta y = 2x + 1.
+; pensado para debug con SSMH (dos sitios continuos para reproponer,
+; buen ejemplo de single-site MH iteracion a iteracion) y con BBVI
+; (dos latentes continuas, se puede ver el ELBO subir paso a paso).
+; uso: cargo run -- debug programs/line_fit.hoppl ssmh
+;      cargo run -- debug programs/line_fit.hoppl bbvi
+(let [m (sample (normal 0 2))
+      b (sample (normal 0 2))]
+    (observe (normal (+ (* m 1) b) 0.5) 3.0)
+    (observe (normal (+ (* m 2) b) 0.5) 5.0)
+    m)

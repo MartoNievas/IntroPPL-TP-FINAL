@@ -1,0 +1,10 @@
+; dos llamadas a factor en secuencia (a diferencia de factor_test.hoppl,
+; que tiene una sola). sirve para ver en el debugger como el peso
+; log_w se acumula en dos pasos "factor" separados antes de terminar.
+; uso: cargo run -- debug programs/multi_factor.hoppl lw
+(let [mu (sample (normal 0.0 10.0))
+      diff1 (- mu 3.0)
+      diff2 (- mu 4.0)]
+    (factor (* -0.5 (* diff1 diff1)))
+    (factor (* -0.5 (* diff2 diff2)))
+    mu)

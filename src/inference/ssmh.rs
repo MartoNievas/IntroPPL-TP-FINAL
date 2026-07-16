@@ -96,7 +96,7 @@ pub fn single_site_mh<R: Rng + ?Sized>(
     Ok((chain, acceptance_rate))
 }
 
-fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
+pub(crate) fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
     let num_s: f64 = prop
         .sample_log_probs
         .iter()
@@ -122,7 +122,7 @@ fn mh_log_alpha(curr: &Trace, prop: &Trace, a0: &Addr) -> f64 {
     len_diff + (num - den)
 }
 
-fn run_trace<R: Rng + ?Sized>(
+pub(crate) fn run_trace<R: Rng + ?Sized>(
     mut m: Machine,
     rng: &mut R,
     x0: Option<&Addr>,
