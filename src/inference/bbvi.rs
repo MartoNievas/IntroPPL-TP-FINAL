@@ -80,7 +80,7 @@ pub fn run_bbvi<R: Rng + ?Sized>(
 
         for (elbo_i, scores_i) in step_elbos.iter().zip(step_scores.iter()) {
             // Centered reward: (w_i - b) drastically reduces gradient noise
-            let reward = elbo_i - mean_elbo;
+            let reward = (elbo_i - mean_elbo) / (n_samples - 1) as f64;
 
             for (addr, grad_i) in scores_i {
                 let acc = grad_accum
