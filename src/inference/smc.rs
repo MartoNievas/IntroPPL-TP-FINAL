@@ -11,16 +11,23 @@ state is just a cheap memory clone.
 Because every particle must reach the same sequence of 'observe' statements at the
 same time, this module also performs a static safety check on the program's AST
 before running: it rejects models where an 'observe' could occur in a
-non-deterministic position (e.g. inside an 'if' branch or a function body), since
-that would desynchronize the particle population at runtime.
+non-deterministic position (e.g. inside an 'if' whose condition depends on a random
+variable, or inside a function body), since that would desynchronize the particle
+population at runtime.
+
+The check is a small taint analysis: every expression is classified as `Det`
+(its value is the same in all particles) or `Rand` (it may differ between particles).
+An 'if' with an 'observe' in one of its branches is only rejected when its condition
+is `Rand`; with a `Det` condition all particles take the same branch and stay in sync.
 
 */
 
-use crate::interpreter::{initial_machine, resume, send, Machine, Msg};
-use crate::parser::value::RVal;
-use rand::prelude::*;
+use crate::interpreter::{Machine, Msg, initial_machine, resume, send};
 use crate::parser::sexpr::Form;
 use crate::parser::sexpr::parse;
+use crate::parser::value::RVal;
+use rand::prelude::*;
+use std::collections::HashMap;
 
 /// Runs the Sequential Monte Carlo algorithm with N particles.
 pub fn run_smc<R: Rng + ?Sized>(
@@ -33,7 +40,6 @@ pub fn run_smc<R: Rng + ?Sized>(
 
     // Check the forms
     check_scm_safety(&forms)?;
-
 
     // Parse the AST once and initialize it on the base machine
     let base_m = initial_machine(program)?;
@@ -88,10 +94,7 @@ pub fn run_smc<R: Rng + ?Sized>(
                 .iter()
                 .cloned()
                 .fold(f64::NEG_INFINITY, f64::max);
-            let weights: Vec<f64> = log_increments
-                .iter()
-                .map(|&w| (w - max_lp).exp())
-                .collect();
+            let weights: Vec<f64> = log_increments.iter().map(|&w| (w - max_lp).exp()).collect();
             let sum_w: f64 = weights.iter().sum();
             let probs: Vec<f64> = weights.iter().map(|w| w / sum_w).collect();
 
@@ -138,10 +141,7 @@ pub fn run_smc<R: Rng + ?Sized>(
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
 
-        let weights: Vec<f64> = log_increments
-            .iter()
-            .map(|&w| (w - max_lp).exp())
-            .collect();
+        let weights: Vec<f64> = log_increments.iter().map(|&w| (w - max_lp).exp()).collect();
 
         let sum_w: f64 = weights.iter().sum();
         let probs: Vec<f64> = weights.iter().map(|w| w / sum_w).collect();
@@ -157,128 +157,230 @@ pub fn run_smc<R: Rng + ?Sized>(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Static AST analysis (taint analysis) for SMC synchronization
+// ---------------------------------------------------------------------------
+
+/// Two-point lattice: `Det < Rand`, so `max` is the join.
+/// `Det`  -> the value is identical in every particle.
+/// `Rand` -> the value may differ between particles (depends on a `sample`).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum Taint {
+    Det,
+    Rand,
+}
+
+/// Result of analyzing one expression.
+struct Info {
+    taint: Taint,
+    has_observe: bool,
+}
+
+impl Info {
+    fn pure(taint: Taint) -> Self {
+        Info {
+            taint,
+            has_observe: false,
+        }
+    }
+}
+
+/// Maps each locally bound variable (let / fn parameter) to its taint.
+/// A symbol that is not in the environment is a global primitive: `Det`.
+type TaintEnv = HashMap<String, Taint>;
+
 // Helper function for the static AST analysis that detects desynchronization in the SMC algorithm
 pub(crate) fn check_scm_safety(forms: &[Form]) -> Result<(), String> {
-
+    let env = TaintEnv::new();
     for form in forms {
-        check_form(form)?;
+        check_form(form, &env)?;
     }
     Ok(())
 }
 
-// Recursive function that returns true if the form contains at least one `observe`.
-// Fails if it finds an `observe` in a structurally unsafe position
+// Analyzes every form in `items` and joins the results:
+// taint = max of the taints, has_observe = OR of the flags.
+fn check_args(items: &[Form], env: &TaintEnv) -> Result<Info, String> {
+    let mut acc = Info::pure(Taint::Det);
+    for item in items {
+        let info = check_form(item, env)?;
+        acc.taint = acc.taint.max(info.taint);
+        acc.has_observe |= info.has_observe;
+    }
+    Ok(acc)
+}
+
+// Recursive function that computes, for a form, its taint (Det/Rand) and whether it
+// contains at least one `observe`. Fails if it finds an `observe` in a structurally
+// unsafe position:
+//   - inside an `if` branch whose condition is Rand
+//   - inside a `fn` body
 //
-// NOTE on `factor`: we deliberately do NOT treat "factor" as its own case
-// here. `factor` never pauses the machine (see FactorK in runtime.rs), so it
-// does not need the same synchronization guarantees as `observe`: particles
-// don't need to reach it in the same order for resampling to stay valid,
-// because there is no Msg to intercept at that point. It falls into the `_`
-// arm (standard call) and its arguments are still walked in case they
-// contain a nested `observe`.
-fn check_form(form: &Form) -> Result<bool, String> {
+// NOTE on `factor`: `factor` never pauses the machine (see FactorK in runtime.rs),
+// so it does not need the same synchronization guarantees as `observe`: particles
+// don't need to reach it in the same order for resampling to stay valid, because
+// there is no Msg to intercept at that point. Its arguments are still walked in
+// case they contain a nested `observe`, and its result (nil) is always Det.
+//
+// Calls: a head symbol that is bound in the environment (let variable or fn
+// parameter) is a user-defined / unknown function, so its result is conservatively
+// Rand. A head symbol that is not bound is a global primitive, so the result is
+// the join of its arguments' taints.
+fn check_form(form: &Form, env: &TaintEnv) -> Result<Info, String> {
     match form {
-        Form::Int(_) | Form::Float(_) | Form::Bool(_) | Form::Str(_) | Form::Nil | Form::Symbol(_) => {
-            Ok(false)
+        Form::Int(_) | Form::Float(_) | Form::Bool(_) | Form::Str(_) | Form::Nil => {
+            Ok(Info::pure(Taint::Det))
         }
-        
+
+        Form::Symbol(name) => Ok(Info::pure(env.get(name).copied().unwrap_or(Taint::Det))),
+
         Form::List(list, _list_type) => {
             if list.is_empty() {
-                return Ok(false);
+                return Ok(Info::pure(Taint::Det));
             }
 
             if let Form::Symbol(head) = &list[0] {
                 match head.as_str() {
+                    "sample" => {
+                        // Check the arguments in case they contain nested observes
+                        let mut info = check_args(&list[1..], env)?;
+                        info.taint = Taint::Rand;
+                        Ok(info)
+                    }
+
                     "observe" => {
                         // Check the arguments in case they contain nested observes
-                        for arg in &list[1..] {
-                            check_form(arg)?;
-                        }
-                        Ok(true) // Report upward that we found an observe
+                        let mut info = check_args(&list[1..], env)?;
+                        info.has_observe = true; // Report upward that we found an observe
+                        Ok(info)
                     }
-                    
+
+                    "factor" => {
+                        let mut info = check_args(&list[1..], env)?;
+                        info.taint = Taint::Det; // factor always returns nil
+                        Ok(info)
+                    }
+
                     "if" => {
                         if list.len() == 4 {
-                            let _ = check_form(&list[1])?; // Test
-                            
-                            let then_has_obs = check_form(&list[2])?;
-                            let else_has_obs = check_form(&list[3])?;
-                            
-                            
-                            if then_has_obs || else_has_obs {
+                            let cond = check_form(&list[1], env)?;
+                            let then_info = check_form(&list[2], env)?;
+                            let else_info = check_form(&list[3], env)?;
+
+                            // Only a random condition can send particles down different
+                            // branches. With a deterministic condition they all take the
+                            // same one and stay synchronized.
+                            if cond.taint == Taint::Rand
+                                && (then_info.has_observe || else_info.has_observe)
+                            {
                                 return Err(
-                                    "SMC Static Analysis Error: Found an 'observe' statement inside an 'if' branch. \
-                                     SMC requires a deterministic observation flow. Please move the observation outside the conditional.".into()
+                                    "SMC Static Analysis Error: Found an 'observe' statement inside an 'if' branch whose condition depends on a random variable. \
+                                     Particles may take different branches and desynchronize. Please move the observation outside the conditional \
+                                     or make the condition deterministic.".into()
                                 );
                             }
-                            return Ok(false);
+
+                            return Ok(Info {
+                                // If the condition is Rand, the result is Rand even when
+                                // both branches are Det: which one was chosen is random.
+                                taint: cond.taint.max(then_info.taint).max(else_info.taint),
+                                has_observe: cond.has_observe
+                                    || then_info.has_observe
+                                    || else_info.has_observe,
+                            });
                         }
-                        Ok(false)
+                        // Malformed `if`: walk the children conservatively
+                        check_args(&list[1..], env)
                     }
-                    
+
                     "fn" | "defn" => {
                         let start_idx = if head.as_str() == "defn" { 3 } else { 2 };
-                        
-                        if list.len() > start_idx {
-                            for expr in &list[start_idx..] {
-                                let has_obs = check_form(expr)?;
-                                
-                                
-                                if has_obs {
-                                    return Err(
-                                        "SMC Static Analysis Error: Found an 'observe' statement inside a 'fn' definition. \
-                                         Functions can be called dynamically, which breaks SMC synchronization guarantees.".into()
-                                    );
+
+                        // Parameters may receive random arguments: treat them as Rand
+                        let mut local = env.clone();
+                        if let Some(Form::List(params, _)) = list.get(start_idx - 1) {
+                            for p in params {
+                                if let Form::Symbol(n) = p {
+                                    local.insert(n.clone(), Taint::Rand);
                                 }
                             }
                         }
-                        Ok(false)
+
+                        for expr in list.iter().skip(start_idx) {
+                            let info = check_form(expr, &local)?;
+
+                            if info.has_observe {
+                                return Err(
+                                    "SMC Static Analysis Error: Found an 'observe' statement inside a 'fn' definition. \
+                                     Functions can be called dynamically, which breaks SMC synchronization guarantees.".into()
+                                );
+                            }
+                        }
+                        // The closure value itself is the same in every particle
+                        Ok(Info::pure(Taint::Det))
                     }
-                    
+
                     "let" => {
                         if list.len() >= 3 {
                             if let Form::List(binds, _list_type) = &list[1] {
+                                let mut local = env.clone();
                                 let mut has_obs = false;
-                                // Check the expressions assigned to the variables
-                                for i in (1..binds.len()).step_by(2) {
-                                    has_obs |= check_form(&binds[i])?;
+
+                                // Bindings are sequential: each value sees the previous ones
+                                for pair in binds.chunks(2) {
+                                    if pair.len() == 2 {
+                                        let info = check_form(&pair[1], &local)?;
+                                        has_obs |= info.has_observe;
+                                        if let Form::Symbol(name) = &pair[0] {
+                                            local.insert(name.clone(), info.taint);
+                                        }
+                                    }
                                 }
-                                // Check the body of the let
+
+                                // The taint of the let is the taint of its last body expression
+                                let mut taint = Taint::Det;
                                 for expr in &list[2..] {
-                                    has_obs |= check_form(expr)?;
+                                    let info = check_form(expr, &local)?;
+                                    has_obs |= info.has_observe;
+                                    taint = info.taint;
                                 }
-                                return Ok(has_obs);
+                                return Ok(Info {
+                                    taint,
+                                    has_observe: has_obs,
+                                });
                             }
                         }
-                        Ok(false)
+                        check_args(&list[1..], env)
                     }
-                    
+
                     _ => {
                         // Standard call. Check its arguments.
-                        let mut has_obs = false;
-                        for arg in list {
-                            has_obs |= check_form(arg)?;
+                        let mut info = check_args(&list[1..], env)?;
+                        if env.contains_key(head.as_str()) {
+                            // Call to a user-defined / unknown function: assume it
+                            // may be random.
+                            info.taint = Taint::Rand;
                         }
-                        Ok(has_obs)
+                        Ok(info)
                     }
                 }
             } else {
-                // If the first element is not a symbol, check the whole list
-                let mut has_obs = false;
-                for arg in list {
-                    has_obs |= check_form(arg)?;
-                }
-                Ok(has_obs)
+                // If the first element is not a symbol (e.g. ((self self) p)), the
+                // function is computed dynamically: assume the result is Rand.
+                let mut info = check_args(list, env)?;
+                info.taint = Taint::Rand;
+                Ok(info)
             }
         }
     }
 }
 
-
-
 // Helper function to advance until the next 'Observe' or until the program finishes.
 // Intermediate samples are resolved automatically by sampling from the prior.
-pub(crate) fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -> Result<Msg, String> {
+pub(crate) fn advance_until_sync<R: Rng + ?Sized>(
+    mut m: Machine,
+    rng: &mut R,
+) -> Result<Msg, String> {
     loop {
         match resume(m)? {
             Msg::Sample(_addr, dist, mut next_m) => {
@@ -287,7 +389,7 @@ pub(crate) fn advance_until_sync<R: Rng + ?Sized>(mut m: Machine, rng: &mut R) -
                 send(&mut next_m, sample_val);
                 m = next_m;
             }
-            // New case 
+            // New case
             Msg::Factor(_addr, w, mut next_m) => {
                 next_m.log_w += w;
                 send(&mut next_m, RVal::Nil);
@@ -311,3 +413,4 @@ pub(crate) fn sample_categorical<R: Rng + ?Sized>(probs: &[f64], rng: &mut R) ->
     }
     probs.len() - 1
 }
+

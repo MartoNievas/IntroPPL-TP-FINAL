@@ -7,13 +7,12 @@ using the Score Function estimator (REINFORCE).
 
 */
 
-use std::collections::HashMap;
-use crate::interpreter::{initial_machine, resume, send, Addr, Machine, Msg};
-use crate::parser::distribution::{make_guide, Distribution};
+use crate::interpreter::{Addr, Machine, Msg, initial_machine, resume, send};
+use crate::parser::distribution::{Distribution, make_guide};
 use crate::parser::value::RVal;
 use rand::prelude::*;
-use rand_distr::num_traits::{Pow};
-
+use rand_distr::num_traits::Pow;
+use std::collections::HashMap;
 
 /// Internal structure to store the result of a trace sampled from the guide.
 pub(crate) struct SampleResult {
@@ -33,7 +32,6 @@ pub(crate) struct AdamOptimizer {
     t: usize,
 }
 
-
 // Runs the Black-Box Variational Inference algorithm.
 // Returns the ELBO convergence history, the optimized variational
 // parameters θ, and a posterior-predictive sample batch: the program's
@@ -47,8 +45,9 @@ pub fn run_bbvi<R: Rng + ?Sized>(
     lr: f64,          // Learning rate for Adam (e.g., 0.05)
     rng: &mut R,
 ) -> Result<(Vec<f64>, HashMap<Addr, Vec<f64>>, Vec<RVal>), String> {
-    if n_samples == 0 {
-        return Err("BBVI Error: 'n_samples' (batch size per optimization step) must be strictly greater than 0.".into());
+    // The gradient estimator divides by (n_samples - 1), so we need at least 2 samples.
+    if n_samples < 2 {
+        return Err("BBVI Error: 'n_samples' (batch size per optimization step) must be at least 2, since the gradient estimator divides by n_samples - 1.".into());
     }
 
     let base_m = initial_machine(program)?;
@@ -79,7 +78,10 @@ pub fn run_bbvi<R: Rng + ?Sized>(
         let mut grad_accum: HashMap<Addr, Vec<f64>> = HashMap::new();
 
         for (elbo_i, scores_i) in step_elbos.iter().zip(step_scores.iter()) {
-            // Centered reward: (w_i - b) drastically reduces gradient noise
+            // Centered reward: (w_i - b) drastically reduces gradient noise.
+            // Since b is the mean of the same batch, dividing by (n - 1) instead of n
+            // (Bessel's correction) is what makes the estimator unbiased. This is the
+            // ONLY normalization of the gradient: do not divide by n again below.
             let reward = (elbo_i - mean_elbo) / (n_samples - 1) as f64;
 
             for (addr, grad_i) in scores_i {
@@ -87,7 +89,7 @@ pub fn run_bbvi<R: Rng + ?Sized>(
                     .entry(addr.clone())
                     .or_insert_with(|| vec![0.0; grad_i.len()]);
                 for (k, &g_val) in grad_i.iter().enumerate() {
-                    acc[k] += reward * g_val / (n_samples as f64);
+                    acc[k] += reward * g_val;
                 }
             }
         }
@@ -108,17 +110,22 @@ impl AdamOptimizer {
             beta2: 0.999,
             eps: 1e-8,
             lr,
-            t: 0
+            t: 0,
         }
     }
 
     // Performs a gradient ascent step (theta_new = theta_old + lr * Adam(∇ELBO)).
-    pub(crate) fn step(&mut self, theta: &mut HashMap<Addr, Vec<f64>>, grads: &HashMap<Addr, Vec<f64>>) {
+    pub(crate) fn step(
+        &mut self,
+        theta: &mut HashMap<Addr, Vec<f64>>,
+        grads: &HashMap<Addr, Vec<f64>>,
+    ) {
         self.t += 1;
         let t_f64 = self.t as f64;
 
         // Bias correction
-        let lr_t = self.lr * ((1.0 - self.beta2.powf(t_f64)).sqrt()) / (1.0 - self.beta1.pow(t_f64));
+        let lr_t =
+            self.lr * ((1.0 - self.beta2.powf(t_f64)).sqrt()) / (1.0 - self.beta1.pow(t_f64));
 
         for (addr, grad) in grads {
             let params = match theta.get_mut(addr) {
@@ -126,28 +133,29 @@ impl AdamOptimizer {
                 None => continue,
             };
 
-            let m_vec = self.m.entry(addr.clone()).or_insert_with(|| vec![0.0; params.len()]);
-            let v_vec = self.v.entry(addr.clone()).or_insert_with(|| vec![0.0; params.len()]);
+            let m_vec = self
+                .m
+                .entry(addr.clone())
+                .or_insert_with(|| vec![0.0; params.len()]);
+            let v_vec = self
+                .v
+                .entry(addr.clone())
+                .or_insert_with(|| vec![0.0; params.len()]);
 
             for k in 0..params.len() {
                 let g = grad[k];
                 m_vec[k] = self.beta1 * m_vec[k] + (1.0 - self.beta1) * g;
                 v_vec[k] = self.beta2 * v_vec[k] + (1.0 - self.beta2) * g * g;
 
-
                 // Here we perform the gradient ascent step
                 params[k] += lr_t * m_vec[k] / (v_vec[k].sqrt() + self.eps);
             }
-
         }
-
     }
-
 }
 
-
 // Runs a single trajectory of the program, sampling from the guide distributions q(x, theta)
-pub(crate) fn run_bbvi_sample<R: Rng + ?Sized> (
+pub(crate) fn run_bbvi_sample<R: Rng + ?Sized>(
     mut m: Machine,
     guides: &mut HashMap<Addr, Distribution>,
     theta: &mut HashMap<Addr, Vec<f64>>,
@@ -155,18 +163,17 @@ pub(crate) fn run_bbvi_sample<R: Rng + ?Sized> (
 ) -> Result<SampleResult, String> {
     let mut log_p = 0.0;
     let mut log_q = 0.0;
-    let mut scores : HashMap<Addr, Vec<f64>> = HashMap::new();
+    let mut scores: HashMap<Addr, Vec<f64>> = HashMap::new();
 
     loop {
-
         match resume(m)? {
-            Msg::Sample(addr,prior_dist , mut next_m ) => {
+            Msg::Sample(addr, prior_dist, mut next_m) => {
                 if !guides.contains_key(&addr) {
                     let guide = make_guide(&prior_dist)?;
                     let init_params = guide.params().ok_or_else(|| {
                         format!("BBVI Error: The distribution family '{}' at address '{:?}' does not support continuous parameter optimization.",guide.name(), addr)
                     })?;
-                    
+
                     guides.insert(addr.clone(), guide);
                     theta.insert(addr.clone(), init_params);
                 }
@@ -191,15 +198,18 @@ pub(crate) fn run_bbvi_sample<R: Rng + ?Sized> (
                 if let Some(grad) = guide_dist.grad_log_prob(&x) {
                     scores.insert(addr.clone(), grad);
                 } else {
-                    return Err(format!("BBVI Error: Could not compute Score Function log-prob gradient for distribution '{}' at address '{:?}'.", guide_dist.name(), addr));
+                    return Err(format!(
+                        "BBVI Error: Could not compute Score Function log-prob gradient for distribution '{}' at address '{:?}'.",
+                        guide_dist.name(),
+                        addr
+                    ));
                 }
 
                 send(&mut next_m, x);
                 m = next_m;
-
             }
 
-            Msg::Factor(_addr, val , mut next_m  ) => {
+            Msg::Factor(_addr, val, mut next_m) => {
                 log_p += val;
                 send(&mut next_m, RVal::Nil);
                 m = next_m;
@@ -218,8 +228,8 @@ pub(crate) fn run_bbvi_sample<R: Rng + ?Sized> (
                     elbo_sample,
                     scores,
                 });
-             }
+            }
         }
-
     }
 }
+
